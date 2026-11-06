@@ -1,0 +1,121 @@
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --text: #1d2129;
+  --muted: #6b7280;
+  --line: #e2e5ea;
+  --accent: #2f6fed;
+  --code-bg: #f1f3f6;
+  --bad: #d64545;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171c;
+    --panel: #1d2027;
+    --text: #e6e8ec;
+    --muted: #9aa1ad;
+    --line: #2c313b;
+    --accent: #6b9bff;
+    --code-bg: #242832;
+    --bad: #ff7a7a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 1200px;
+  margin: 0 auto 16px;
+}
+
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 15px; margin: 0 0 10px; }
+h2 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+
+.controls { display: flex; align-items: center; gap: 8px; }
+.pos { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 48px; text-align: center; }
+
+button {
+  font: inherit;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+button:disabled { opacity: .4; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.area {
+  min-height: 180px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+}
+#test-area:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.source-label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 13px; }
+
+textarea {
+  width: 100%;
+  min-height: 160px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--text);
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+textarea.invalid { border-color: var(--bad); }
+
+.log-panel { max-width: 1200px; margin: 16px auto 0; }
+.summary { margin: 0 0 8px; }
+.log {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--code-bg);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* 샘플 HTML 모양 */
+.card .title { margin: 0 0 8px; font-size: 16px; }
+.card .todos { margin: 0 0 8px; padding-left: 20px; }
+.card .done { color: var(--muted); text-decoration: line-through; }
+.card .count { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+.card input { width: 100%; padding: 6px 8px; font: inherit; }

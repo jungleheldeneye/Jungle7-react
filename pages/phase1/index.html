@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 1 · VDOM Diff 검증</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Phase 1 · Virtual DOM / Diff / Patch</h1>
+    <div class="controls">
+      <button id="btn-back" type="button">◀ 뒤로</button>
+      <span id="history-pos" class="pos">1 / 1</span>
+      <button id="btn-forward" type="button">앞으로 ▶</button>
+      <button id="btn-patch" type="button" class="primary">Patch</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <!-- 실제 영역: 페이지 로드 시 이 HTML이 처음 VDOM이 된다. Patch는 이 영역에만 반영된다 -->
+    <section class="panel">
+      <h2>실제 영역 <small>바뀐 부분만 반영됨</small></h2>
+      <div id="real-area" class="area">
+        <div class="card">
+          <h3 class="title">오늘 할 일</h3>
+          <ul class="todos">
+            <li class="done">빨래</li>
+            <li>설거지</li>
+            <li>공부</li>
+          </ul>
+          <p class="count">3개 중 1개 완료</p>
+          <input type="text" placeholder="여기 입력해두고 Patch 해보세요">
+        </div>
+      </div>
+    </section>
+
+    <!-- 테스트 영역: 로드 시 VDOM으로 렌더링된다. 사용자가 자유롭게 수정 -->
+    <section class="panel">
+      <h2>테스트 영역 <small>직접 수정하거나 아래 HTML을 고치세요</small></h2>
+      <div id="test-area" class="area" contenteditable="true" spellcheck="false"></div>
+      <label class="source-label" for="test-source">테스트 영역 HTML</label>
+      <textarea id="test-source" spellcheck="false"></textarea>
+    </section>
+  </main>
+
+  <section class="panel log-panel">
+    <h2>마지막 Patch 결과</h2>
+    <p id="summary" class="summary">아직 Patch하지 않았어요.</p>
+    <pre id="patch-log" class="log"></pre>
+  </section>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
