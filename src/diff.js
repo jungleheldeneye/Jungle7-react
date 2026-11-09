@@ -4,20 +4,21 @@
  *   → [{ type: 'PROPS', path: [0], props: { nodeValue: '1' } }]
  *
  * 변경 5가지 (docs/design.md 6-3)
- *   CREATE  { path, vnode }   그 자리에 새 노드 추가
- *   REMOVE  { path }          그 자리의 노드 삭제
- *   REPLACE { path, vnode }   통째로 바꿈
- *   PROPS   { path, props }   속성만 바꿈. 사라진 속성은 undefined. 글자 변경도 여기 (nodeValue)
- *   MOVE    { path, to }      그 자리의 노드를 빼서, 뺀 뒤 목록의 to번 자리에 넣음 (R8)
+ *   CREATE  { path, before, vnode }  path(부모) 안에서 옛 before번 노드 앞에 새 노드를 넣음. before가 null이면 맨 뒤
+ *   REMOVE  { path }                 그 노드 삭제
+ *   REPLACE { path, vnode }          통째로 바꿈
+ *   PROPS   { path, props }          속성만 바꿈. 사라진 속성은 undefined. 글자 변경도 여기 (nodeValue)
+ *   MOVE    { path, before }         그 노드를 같은 부모의 옛 before번 노드 앞으로 옮김. null이면 맨 뒤 (R8)
  * path: 루트에서 몇 번째 자식을 따라 내려가는지. [0, 2] = 루트의 0번 자식의 2번 자식
  *
- * 변경 목록은 위에서부터 순서대로 적용해야 한다. 각 path는 앞의 변경이 적용된 뒤의 위치다
+ * 모든 번호는 "고치기 전" 트리의 번호다. patch가 고치기 전에 대상을 전부 찾아 두니 앞 변경이 번호를 밀어도 상관없다
+ * 순서는 한 부모마다 삭제 → 자리 잡기(CREATE·MOVE) → 짝 맞은 자식의 안쪽 변경
  */
 export function diff(oldVnode, newVnode) {
   return walk(oldVnode, newVnode, []);
 }
 
-/** 짝지어진 노드 한 쌍의 변경 목록 */
+/** 짝지어진 노드 한 쌍의 변경 목록. path는 옛 노드의 위치 */
 function walk(oldVnode, newVnode, path) {
   if (oldVnode.type !== newVnode.type) {
     return [{ type: 'REPLACE', path, vnode: newVnode }];   // 통째로 바뀌니 자식은 볼 필요 없다
@@ -30,83 +31,55 @@ function walk(oldVnode, newVnode, path) {
 
 /**
  * 자식 목록을 비교한다 (R3, R8)
- *   old: A(1) B(2) C(3) D(4)  →  new: C(3) A(1) E(5) B(2)      (괄호 안은 key)
- *   REMOVE [3] (D) → MOVE [2] to 0 (C) → CREATE [2] (E), A·B·C는 walk로 안쪽 비교
- *
- * current는 "지금까지 만든 변경을 적용했다면 실제 DOM 자식 순서가 이렇다"를 흉내 낸 이름 목록이다.
- * 모든 번호를 current에서 읽어서, patch가 목록 순서대로 적용하기만 하면 맞게 한다
+ *   old: A(1) B(2) C(3) D(4)  →  new: C(3) A(1) E(5) B(2)      (괄호 안은 key, 옛 번호 A0 B1 C2 D3)
+ *   1. 삭제:      REMOVE [3] (D)
+ *   2. 그대로 둘 자식: 새 순서로 놓은 옛 번호 [2, 0, 1] 중 커지는 가장 긴 줄 [0, 1] → A, B는 안 움직인다
+ *   3. 자리 잡기: C는 다음 그대로 둘 자식 A(옛 0번) 앞으로 → MOVE [2] before 0
+ *                E는 다음 그대로 둘 자식 B(옛 1번) 앞에    → CREATE [] before 1
+ *   4. 안쪽 비교: C·A·B를 옛 위치 [2], [0], [1]로 walk
+ * 그대로 둘 자식은 움직이지 않으니, 나머지를 "새 순서에서 바로 다음에 오는 그대로 둘 자식" 앞에 끼우면 순서가 맞는다
  */
 function diffChildren(oldChildren, newChildren, path) {
+  // 둘 다 자식이 없으면(글자·주석·빈 태그) 볼 게 없다. 노드 절반이 글자라 이름·Map 만들기를 건너뛰면 빨라진다
+  if (oldChildren.length === 0 && newChildren.length === 0) return [];
+
   const oldNames = namesOf(oldChildren);
   const newNames = namesOf(newChildren);
   assertUnique(oldNames);
   assertUnique(newNames);
-
-  // 1. 삭제: new에 없는 옛 자식. 뒤 번호부터 적어서 앞 번호가 밀리지 않게 한다
+  const oldIndexOf = new Map(oldNames.map((name, i) => [name, i]));
   const newNameSet = new Set(newNames);
-  const removes = oldNames
-    .flatMap((name, i) => (newNameSet.has(name) ? [] : [{ type: 'REMOVE', path: [...path, i] }]))
-    .reverse();
-  const current = oldNames.filter((name) => newNameSet.has(name));
-  const oldByName = new Map(oldChildren.map((child, i) => [oldNames[i], child]));
 
-  // 2. 그대로 둘 자식: 남은 옛 자식을 new 순서로 놓고, current 위치가 커지는 가장 긴 줄(LIS)
+  // 1. 삭제: new에 없는 옛 자식. patch가 미리 찾아 두니 번호 순서는 상관없다
+  const removes = oldNames.flatMap((name, i) => (newNameSet.has(name) ? [] : [{ type: 'REMOVE', path: [...path, i] }]));
+
+  // 2. 그대로 둘 자식: 짝 있는 새 자식들의 옛 번호를 새 순서로 놓고, 커지는 가장 긴 줄(LIS)
   //    이 줄은 서로의 앞뒤 순서가 이미 맞아서 움직이지 않아도 된다. 나머지만 옮기면 이동이 가장 적다
-  const positionOf = new Map(current.map((name, i) => [name, i]));
-  const kept = newNames.filter((name) => oldByName.has(name));
-  const stay = new Set(longestIncreasing(kept.map((name) => positionOf.get(name))).map((k) => kept[k]));
+  const matchedNew = newNames.flatMap((name, i) => (oldIndexOf.has(name) ? [i] : []));   // 짝 있는 새 번호들
+  const stayNew = longestIncreasing(matchedNew.map((i) => oldIndexOf.get(newNames[i]))).map((k) => matchedNew[k]);
+  const stays = new Set(stayNew);   // 새 번호로 찾기
 
-  // 3. new 순서대로 한 명씩 자리를 잡는다. 앞 자식이 자리 잡은 결과(current, prevIndex)를 다음 자식이 이어받는다
-  const placed = newNames.reduce(
-    (state, name, i) => placeChild(state, {
-      name,
-      path,
-      oldChild: oldByName.get(name),
-      newChild: newChildren[i],
-      stays: stay.has(name),
-    }),
-    { current, prevIndex: -1, patches: [] },   // prevIndex: 바로 앞 형제가 current에서 몇 번인지. 처음엔 없음
-  );
-  return [...removes, ...placed.patches];
-}
+  // 3. 자리 잡기: 그대로 둘 자식이 아니면, 새 순서에서 바로 뒤에 오는 그대로 둘 자식(옛 번호) 앞에 놓는다
+  const placements = newChildren.flatMap((child, i) => {
+    if (stays.has(i)) return [];   // 그대로 둘 자식: 할 일 없음
+    const k = firstIndexWhere(stayNew.length, (j) => stayNew[j] > i);   // i 뒤의 첫 그대로 둘 자식
+    const before = k < stayNew.length ? oldIndexOf.get(newNames[stayNew[k]]) : null;   // 뒤에 없으면 맨 뒤
+    const from = oldIndexOf.get(newNames[i]);
+    if (from === undefined) {
+      return [{ type: 'CREATE', path, before, vnode: child }];   // 새 자식: E
+    } else {
+      return [{ type: 'MOVE', path: [...path, from], before }];   // 옮길 자식: C
+    }
+  });
 
-/**
- * 자식 하나를 바로 앞 형제 뒤에 놓는다. 이전 상태를 받아 다음 상태를 돌려준다
- *   그대로 둘 자식: 제자리에서 안쪽만 비교
- *   새 자식:       앞 형제 뒤에 CREATE
- *   옮길 자식:     앞 형제 뒤로 MOVE 하고 안쪽 비교
- */
-function placeChild({ current, prevIndex, patches }, { name, path, oldChild, newChild, stays }) {
-  if (stays) {
-    // 그대로 둘 자식은 항상 앞 형제보다 뒤에 있으니, 그 뒤부터만 찾는다
-    const index = current.indexOf(name, prevIndex + 1);
-    return {
-      current,
-      prevIndex: index,
-      patches: [...patches, ...walk(oldChild, newChild, [...path, index])],
-    };
-  }
+  // 4. 안쪽 비교: 짝 있는 자식은 옛 위치 그대로 walk. 새 자식은 통째로 만드니 볼 필요 없다
+  //    자리 잡기보다 뒤에 둬서, 기준점이 REPLACE되더라도 이미 끼운 뒤가 된다
+  const inner = newChildren.flatMap((child, i) => {
+    const from = oldIndexOf.get(newNames[i]);
+    return from === undefined ? [] : walk(oldChildren[from], child, [...path, from]);
+  });
 
-  const from = current.indexOf(name);   // 새 자식이면 -1
-  // 앞 형제 바로 뒤. 앞 형제보다 앞에서 빼냈으면 앞 형제가 한 칸 당겨진다
-  const index = from !== -1 && from < prevIndex ? prevIndex : prevIndex + 1;
-  const next = (from === -1 ? current : current.toSpliced(from, 1)).toSpliced(index, 0, name);
-
-  if (from === -1) {
-    // 새로 만드니 안쪽은 볼 필요 없다
-    return {
-      current: next,
-      prevIndex: index,
-      patches: [...patches, { type: 'CREATE', path: [...path, index], vnode: newChild }],
-    };
-  }
-
-  const move = from !== index ? [{ type: 'MOVE', path: [...path, from], to: index }] : [];
-  return {
-    current: next,
-    prevIndex: index,
-    patches: [...patches, ...move, ...walk(oldChild, newChild, [...path, index])],
-  };
+  return [...removes, ...placements, ...inner];
 }
 
 // ─── 여기부터는 위 흐름이 쓰는 작은 도우미들 (쓰이는 순서대로) ───
@@ -161,7 +134,7 @@ function assertUnique(names) {
 }
 
 /**
- * 가장 긴 증가 부분 수열(LIS)의 칸 번호들. O(n log n)
+ * 가장 긴 증가 부분 수열(LIS)의 칸 번호들 (오름차순). O(n log n)
  *   [3, 0, 1, 2] → [1, 2, 3]   (값 0, 1, 2)
  *
  * tails[len - 1]: 길이 len인 증가하는 줄 중에서, 끝값이 가장 작은 줄의 마지막 칸 번호
@@ -169,7 +142,7 @@ function assertUnique(names) {
  *   tails의 끝값들은 항상 커지는 순서라서 이분 탐색으로 자리를 찾을 수 있다
  * prev[i]: i번 칸이 들어간 줄에서 바로 앞 칸. 마지막에 거꾸로 따라가서 줄을 복원한다
  *
- * 이 알고리즘은 tails를 고쳐 가며 쓰는 게 핵심이라, tails만은 바꿔 쓰는 배열로 둔다
+ * 이 알고리즘은 tails를 고쳐 가며 쓰는 게 핵심이라, tails는 바꿔 쓰는 배열로 둔다
  */
 function longestIncreasing(values) {
   const tails = [];
@@ -180,8 +153,14 @@ function longestIncreasing(values) {
     return len > 0 ? tails[len - 1] : -1;     // 한 칸 짧은 줄 뒤에 이어 붙인다
   });
 
-  const chainEndingAt = (i) => (i === -1 ? [] : [...chainEndingAt(prev[i]), i]);
-  return chainEndingAt(tails.at(-1) ?? -1);
+  // 줄 복원: 마지막 칸에서 prev를 따라 거꾸로 가며 뒤에서부터 채운다. O(n)
+  // 전엔 [...앞줄, i]로 칸마다 앞줄을 복사해서 O(n²)이었고(5000개에서 36ms), 재귀라 20000개에서 스택이 넘쳤다
+  // tails처럼 칸을 채워 가는 게 알고리즘 자체라 chain도 바꿔 쓰는 배열로 둔다
+  const chain = new Array(tails.length);
+  for (let k = tails.length - 1, i = tails.at(-1); k >= 0; k -= 1, i = prev[i]) {
+    chain[k] = i;
+  }
+  return chain;
 }
 
 /** 0..length-1 중 isAtLeast(k)가 처음 true가 되는 k (없으면 length). 앞은 false, 뒤는 true로 나뉘어 있어야 한다 */

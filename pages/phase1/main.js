@@ -164,10 +164,14 @@ function showAppliedTrees() {
   }
 }
 
+/**
+ * 변경의 path는 전부 "고치기 전" 위치라서, 강조는 고치기 전 트리에만 한다
+ * 한 노드에 변경이 여럿 올 수 있어 path마다 목록으로 묶는다
+ *   <ul>에 class 변경 + 자식 추가 → '0.1' → [PROPS, CREATE]  (CREATE의 path는 부모)
+ */
 function renderComparison(beforeOutput, afterOutput, before, after, patches = []) {
-  const changes = new Map(patches.map((change) => [change.path.join('.'), change]));
-  renderVdomTree(beforeOutput, before, changes);
-  renderVdomTree(afterOutput, after, changes);
+  renderVdomTree(beforeOutput, before, Map.groupBy(patches, (change) => change.path.join('.')));
+  renderVdomTree(afterOutput, after);
 }
 
 function showHistory() {
@@ -205,26 +209,27 @@ function renderVdomTree(output, vnode, changes = new Map()) {
   }
 
   function visit(node, path) {
-    const change = changes.get(path.join('.'));
-    const type = change?.type;
+    const types = (changes.get(path.join('.')) ?? []).map((change) => change.type);
+    const propsChange = changes.get(path.join('.'))?.find((change) => change.type === 'PROPS');
+    // 노드 자체가 지워지거나 바뀌거나 옮겨지면 태그를 강조. PROPS는 속성만, CREATE는 "이 안에 추가"라 태그는 그대로
+    const nodeChanged = types.some((type) => type === 'REMOVE' || type === 'REPLACE' || type === 'MOVE');
     const indent = '  '.repeat(path.length);
     append(indent);
 
     // 글자·주석은 { type: '#text' | '#comment', props: { nodeValue } } 모양 (6-2). 글자 변경은 PROPS로 온다
     if (node.type === '#text') {
-      append(JSON.stringify(node.props.nodeValue), Boolean(type));
+      append(JSON.stringify(node.props.nodeValue), types.length > 0);
     } else if (node.type === '#comment') {
-      append(`<!--${node.props.nodeValue}-->`, Boolean(type));
+      append(`<!--${node.props.nodeValue}-->`, types.length > 0);
     } else {
-      append(`<${node.type}`, Boolean(type && type !== 'PROPS'));
+      append(`<${node.type}`, nodeChanged);
       for (const [name, value] of Object.entries(node.props)) {
-        const changed = type === 'PROPS' && Object.hasOwn(change.props, name);
-        append(` ${name}=${JSON.stringify(value)}`, changed);
+        append(` ${name}=${JSON.stringify(value)}`, Boolean(propsChange && Object.hasOwn(propsChange.props, name)));
       }
       append('>');
     }
 
-    if (type) append(` [${type}]`, true);
+    if (types.length > 0) append(` [${types.join(', ')}]`, true);
     append('\n');
 
     if (node.type !== '#text' && node.type !== '#comment') {
