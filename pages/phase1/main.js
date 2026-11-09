@@ -12,7 +12,7 @@
  *
  * 각 영역(.area) 안에는 루트 요소가 정확히 하나 있다고 가정한다.
  */
-import { domToVdom, vdomToDom } from '../../src/vdom.js';
+import { domToVdom, vdomToDom, stripBlankNodes } from '../../src/vdom.js';
 import { diff } from '../../src/diff.js';
 import { patch } from '../../src/patch.js';
 
@@ -98,6 +98,8 @@ function updateControls() {
 
 // ── 동작 ──────────────────────────────────────────────────
 function onLoad() {
+  // 0. 실제 영역의 공백 텍스트, 주석 제거 (VDOM과 childNodes 번호를 맞추기 위해)
+  stripBlankNodes(realArea);
   // 1. 실제 영역의 샘플 HTML → VDOM
   const vdom0 = domToVdom(rootOf(realArea));
   // 2. 그 VDOM으로 테스트 영역 렌더링
