@@ -1,4 +1,4 @@
-import { vdomToDom } from './vdom.js';
+import { vdomToDom, setProp } from './vdom.js';
 
 /**
  * diff가 만든 변경 목록을 실제 DOM에 반영하고, 반영한 뒤의 루트를 돌려준다 (R3)
@@ -69,45 +69,4 @@ function applyPatch(root, change) {
 /** 루트에서 path를 따라 내려간 노드. [] → 루트, [0, 2] → 루트의 0번 자식의 2번 자식 */
 function nodeAt(root, path) {
   return path.reduce((node, i) => node.childNodes[i], root);
-}
-
-/**
- * 속성 하나를 실제 노드에 넣거나 지운다. value가 undefined면 사라진 속성이다 (6-3 사라진 속성)
- *   setProp(<li>, 'class', 'done')  → <li class="done">
- *   setProp(<li>, 'class', undefined) → <li>
- */
-function setProp(node, name, value) {
-  switch (name) {
-    case 'nodeValue':
-      // 글자·주석: '0' → '1'. 글자 노드엔 setAttribute가 없어서 property로 (6-2)
-      node.nodeValue = value;
-      return;
-
-    case 'value':
-      // 입력창: HTML(attribute)과 화면 칸(property)을 둘 다 고친다 (6-3 patch의 value)
-      // 사용자가 친 뒤엔 attribute만 바꾸면 화면이 안 따라와서 칸도 고친다
-      if (value === undefined) {
-        node.removeAttribute('value');   // 사라짐
-        node.value = '';
-      } else {
-        node.setAttribute('value', value);   // 바뀜: '밥' → ''
-        node.value = value;
-      }
-      return;
-
-    default:
-      if (typeof value === 'function') {
-        // 이벤트가 생기거나 바뀜: onclick = 새 함수. vdomToDom과 같은 규칙 (6-3 속성 넣기)
-        node[name] = value;
-      } else if (value === undefined && typeof node[name] === 'function') {
-        // 이벤트가 사라짐: 지금 node.onclick에 함수가 있으면 null로 뗀다
-        node[name] = null;
-      } else if (value === undefined) {
-        // 그 외 속성이 사라짐: class
-        node.removeAttribute(name);
-      } else {
-        // 그 외 속성이 생기거나 바뀜: class="done"
-        node.setAttribute(name, value);
-      }
-  }
 }

@@ -67,14 +67,55 @@ export function vdomToDom(vnode) {
 
   const el = document.createElement(vnode.type);
   for (const [name, value] of Object.entries(vnode.props)) {
-    if (typeof value === 'function') {
-      el[name] = value;               // 이벤트: el.onclick = fn (6-3)
-    } else {
-      el.setAttribute(name, value);   // 그 외: class="done"
-    }
+    setProp(el, name, value);   // patch와 같은 규칙 한 곳 (6-3 속성 넣기)
   }
   for (const child of vnode.children) {
     el.appendChild(vdomToDom(child));
   }
   return el;
+}
+
+// ─── 여기부터는 위 흐름이 쓰는 작은 도우미들 (쓰이는 순서대로) ───
+
+/**
+ * 속성 하나를 실제 노드에 넣거나 지운다. value가 undefined면 사라진 속성이다 (6-3 사라진 속성)
+ *   setProp(<li>, 'class', 'done')  → <li class="done">
+ *   setProp(<li>, 'class', undefined) → <li>
+ * 처음 만들 때(vdomToDom)와 고칠 때(patch)가 같이 쓴다. 규칙이 한 곳에 있어야
+ * "patch 결과 = 처음부터 그린 것"(2-2 patch 보장)이 어긋나지 않는다 (R3)
+ */
+export function setProp(node, name, value) {
+  switch (name) {
+    case 'nodeValue':
+      // 글자·주석: '0' → '1'. 글자 노드엔 setAttribute가 없어서 property로 (6-2)
+      node.nodeValue = value;
+      return;
+
+    case 'value':
+      // 입력창: HTML(attribute)과 화면 칸(property)을 둘 다 고친다 (6-3 patch의 value)
+      // 사용자가 친 뒤엔 attribute만 바꾸면 화면이 안 따라와서 칸도 고친다
+      if (value === undefined) {
+        node.removeAttribute('value');   // 사라짐
+        node.value = '';
+      } else {
+        node.setAttribute('value', value);   // 바뀜: '밥' → ''
+        node.value = value;
+      }
+      return;
+
+    default:
+      if (typeof value === 'function') {
+        // 이벤트가 생기거나 바뀜: onclick = 새 함수 (6-3 속성 넣기)
+        node[name] = value;
+      } else if (value === undefined && typeof node[name] === 'function') {
+        // 이벤트가 사라짐: 지금 node.onclick에 함수가 있으면 null로 뗀다
+        node[name] = null;
+      } else if (value === undefined) {
+        // 그 외 속성이 사라짐: class
+        node.removeAttribute(name);
+      } else {
+        // 그 외 속성이 생기거나 바뀜: class="done"
+        node.setAttribute(name, value);
+      }
+  }
 }

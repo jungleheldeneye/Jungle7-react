@@ -30,15 +30,15 @@ function walk(oldVnode, newVnode, path) {
 
 /**
  * 자식 목록을 비교한다 (R3, R8)
- *   old: A(1) B(2) C(3) D(4)  →  new: C(3) A(1) E(5) B(2)
+ *   old: A(1) B(2) C(3) D(4)  →  new: C(3) A(1) E(5) B(2)      (괄호 안은 key)
  *   REMOVE [3] (D) → MOVE [2] to 0 (C) → CREATE [2] (E), A·B·C는 walk로 안쪽 비교
  *
  * current는 "지금까지 만든 변경을 적용했다면 실제 DOM 자식 순서가 이렇다"를 흉내 낸 이름 목록이다.
  * 모든 번호를 current에서 읽어서, patch가 목록 순서대로 적용하기만 하면 맞게 한다
  */
 function diffChildren(oldChildren, newChildren, path) {
-  const oldNames = oldChildren.map(nameOf);
-  const newNames = newChildren.map(nameOf);
+  const oldNames = namesOf(oldChildren);
+  const newNames = namesOf(newChildren);
   assertUnique(oldNames);
   assertUnique(newNames);
 
@@ -132,13 +132,28 @@ function isChangedProp(name, oldProps, newProps) {
   }
 }
 
-/** 짝짓기용 이름. key가 있으면 'k:키', 없으면 'i:자리번호'. 앞 글자로 둘이 섞이지 않게 한다 */
-function nameOf(child, i) {
-  return child.key === undefined ? `i:${i}` : `k:${child.key}`;
+/**
+ * 짝짓기용 이름들. key가 있으면 'k:키', 없으면 'i:key 없는 형제 중 몇 번째'. 앞 글자로 둘이 섞이지 않게 한다
+ *   [A(key 1), input]           → ['k:1', 'i:0']
+ *   [B(key 2), A(key 1), input] → ['k:2', 'k:1', 'i:0']   input은 그대로 'i:0'이라 짝이 맞는다
+ * 전체 자리 번호를 쓰면 input이 'i:1' → 'i:2'로 바뀌어 지웠다 다시 만들어지고 입력값이 사라진다 (R3)
+ * key가 하나도 없으면 전체 자리 번호와 같다
+ */
+function namesOf(children) {
+  // key 없는 자식의 자리 번호 → key 없는 형제 중 몇 번째.  [k, -, k, -] → {1 → 0, 3 → 1}
+  const unkeyedOrder = new Map(
+    children
+      .flatMap((child, i) => (child.key === undefined ? [i] : []))
+      .map((i, order) => [i, order]),
+  );
+  return children.map((child, i) => (child.key === undefined ? `i:${unkeyedOrder.get(i)}` : `k:${child.key}`));
 }
 
 /** 형제 사이에 같은 key가 있으면 짝을 정할 수 없어서 에러를 낸다 (6-3) */
 function assertUnique(names) {
+  // 겹침이 없는 흔한 경우는 Set 한 번으로 끝낸다 (O(n)). 매번 indexOf로 찾으면 1000개에서 비교 100만 번이다
+  if (new Set(names).size === names.length) return;
+  // 여기는 에러가 날 때만 온다. 어느 이름이 겹쳤는지 찾아 메시지에 넣는다
   const duplicate = names.find((name, i) => names.indexOf(name) !== i);
   if (duplicate !== undefined) {
     throw new Error(`같은 key가 형제 사이에 두 번 있습니다: ${duplicate.slice(2)}`);
