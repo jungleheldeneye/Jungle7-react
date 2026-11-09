@@ -114,7 +114,7 @@ setN(1)                                           hooks.js       R1
 - 보장
   - [ ] deps가 지난번과 같으면(참조 비교) fn을 다시 실행하지 않고 지난 결과를 돌려준다
 
-#### `render(Component, 붙일 곳)` · component.js · R1, R3 · ❓ 이름
+#### `render(Component, 붙일 곳)` · component.js · R1, R3
 - 입력: 컴포넌트 함수, 실제 DOM 요소
 - 보장
   - [ ] 처음 한 번 그린다
@@ -175,12 +175,12 @@ function App() {
   return h('div', null,
     h('p', null, `할 일 ${todos.length}개`),
     h(TodoInput, { text, onInput: setText, onAdd: add }),
-    h('ul', null, todos.map(t => h(TodoItem, { todo: t, onRemove: remove })))
+    h('ul', null, todos.map(t => h(TodoItem, { key: t.id, todo: t, onRemove: remove })))
   )
 }
 
 function TodoItem({ todo, onRemove }) {     // 상태 없음, 받아서 그리기만
-  return h('li', { key: todo.id },
+  return h('li', null,
     todo.text,
     h('button', { onclick: () => onRemove(todo.id) }, '삭제')
   )
@@ -198,7 +198,7 @@ function TodoInput({ text, onInput, onAdd }) {   // 상태 없음
 | --- | --- |
 | R4 조각 나누기 | 컴포넌트 여러 개를 `h(컴포넌트, props)`로 연결 |
 | R5 데이터 위치 예측 | `useState`는 App에만. 자식은 `onRemove`·`onInput`으로 부모에게 부탁. 자식에서 `useState`를 쓰면 에러. 컴포넌트(`TodoItem`, `TodoInput`)는 대문자 이름 + `h()`로만 부름 |
-| R8 key | `{ key: todo.id }` ❓ 위치는 6번 "컴포넌트 메모를 언제 펼치나"와 함께 정함 (`TodoItem` 안의 `li` vs `h(TodoItem, { key })`) |
+| R8 key | `h(TodoItem, { key: t.id, ... })`처럼 바깥(메모)에 적는다. `TodoItem` 안의 `li`에 적어도 동작한다 (6-3 "key 위치") |
 | R3 입력 유지 | 목록이 바뀌어도 입력창의 글자가 남아 있어야 함 |
 
 ---
@@ -214,7 +214,7 @@ function TodoInput({ text, onInput, onAdd }) {   // 상태 없음
      - 대가: 자식을 `TodoItem(...)`으로 직접 부르지 않고 `h(TodoItem, ...)`으로 라이브러리에 맡겨야 한다. 입력 글자 같은 작은 값도 App으로 올려야 한다
      - ④는 다른 실수(자식이 `todo.text = 'x'`로 부모 데이터를 직접 고침)를 막는 것이라 보류 → 5. 비목표
 2. **화면에 붙이는 함수 이름**: `render` / `mount` / 기타
-   - 결정:
+   - 결정: ✅ **함수 `render(Component, 붙일 곳)`** (6-3 "render 모양")
 3. **이벤트 속성 이름**: `onclick`(DOM 그대로) / `onClick`(React처럼)
    - 결정: ✅ **`onclick` (DOM 그대로)**. 명세 예시와 같고 이름 변환이 필요 없다 (6-3 결정 기록)
 4. **컴포넌트와 도우미 함수를 어떻게 구분하나** (1번 결정에서 나온 질문)
@@ -244,7 +244,7 @@ function TodoInput({ text, onInput, onAdd }) {   // 상태 없음
   - 발표용: JSX는 빌드 도구가 `h(...)` 호출로 바꿔주는 것 (`esbuild --jsx-factory=h`)
 - ✅ **`component()` 등록**: 직접 호출까지 실행 중에 막을 수 있지만 공개 API가 늘어서 안 함 (4번 열린 질문 4)
 - ✅ **props 잠그기** (`Object.freeze`): 자식이 받은 데이터를 직접 고치는 걸 막음. R5와 관련 있지만 이번엔 안 함. 필요해지면 추가 (`h(컴포넌트, ...)` 준비가 돼 있어서 붙이기 쉬움)
--
+- ✅ **자식 실행 건너뛰기** (React의 `React.memo`): props가 지난번과 같으면 자식 컴포넌트를 다시 실행하지 않음. 추가 고려사항으로 보류. 함수 props가 매번 새 객체라 제대로 쓰려면 함수 고정(`useCallback`)과 함수형 업데이트(`setTodos(prev => ...)`)까지 필요한데 셋 다 명세에 없음 (6-3 "컴포넌트 메모 펼치기")
 
 ---
 
@@ -259,9 +259,9 @@ function TodoInput({ text, onInput, onAdd }) {   // 상태 없음
 - 사라진 속성 표시 방법 → ✅ 6-3
 - patch 방식 (path로 찾기 / 대상 노드 먼저 다 찾기 / 노드 참조 저장) → ✅ 6-3 (변경마다 path로 찾기)
 - property vs attribute 규칙 (`value`는 property로) → ✅ 6-3 (글자·주석 `nodeValue`도 property, `patch`의 `value`는 attribute + property)
-- 컴포넌트 메모(`h(TodoItem, ...)`)를 언제 펼치나: diff 전에 다 펼쳐서 순수 VDOM으로 만들까, diff 중에 펼칠까
-  - 이어서 정할 것: 3번 예시처럼 key가 `TodoItem` 안의 `li`에 있으면 동작하나? (실제 React에선 동작 안 하고 경고. `h(TodoItem, { key })`에 붙여야 함)
-- "지금 누구 차례" 표시 방법: 이름 / 깊이(0=루트) / 그냥 "루트 실행 중" 참·거짓
+- 컴포넌트 메모(`h(TodoItem, ...)`)를 언제 펼치나 → ✅ 6-3 (diff 전에 다 펼친다)
+  - 이어서 정한 것: key 위치 → ✅ 6-3 (바깥 `h(TodoItem, { key })`, 안쪽 `li`도 동작)
+- "지금 누구 차례" 표시 방법 → ✅ 6-3 (지금 실행 중인 컴포넌트)
 
 나중에 (Hooks 공부 후): hooks 순번 — 여러 useState를 어떻게 구분하나 (B로 정해서 저장소는 App 하나뿐)
 
@@ -334,3 +334,7 @@ function TodoInput({ text, onInput, onAdd }) {   // 상태 없음
 - **patch가 노드 찾기**: 변경 하나를 적용할 때마다 루트에서 path를 따라 내려가 찾는다 (`childNodes[0].childNodes[2]`). path가 "앞 변경이 적용된 뒤의 위치"(변경 적용 순서)라서 바로 맞는다. 미리 다 찾아 두면 앞의 REMOVE·MOVE가 번호를 바꿔 엉뚱한 노드를 고치고, 노드 참조를 VDOM에 저장하면 VDOM 모양(6-2)과 diff까지 바뀐다. 대가: 변경마다 O(깊이). 성능 영향: 상수 (앱 트리는 얕다)
 - **patch 반환값**: 변경을 다 적용한 뒤의 루트를 돌려준다 (`patches.reduce(applyPatch, rootNode)`). 루트가 REPLACE(`path: []`)로 바뀌면 원래 `rootNode`는 화면에서 빠진 노드가 되는데, 다음 변경도 부르는 쪽(`render`)도 새 루트를 이어받을 수 있다. 돌려주지 않으면 "루트 교체 뒤엔 아무도 옛 루트를 안 쓴다"는 적히지 않은 약속에 기대게 된다. 대가: 반환값 하나. phase1은 루트를 매번 다시 읽어서 무시해도 된다. 성능 영향: 없음
 - **patch의 `value`**: attribute와 property를 둘 다 고친다 (`setAttribute('value', v)` + `el.value = v`, 사라지면 `removeAttribute` + `el.value = ''`). 사용자가 한 번 치면 attribute를 바꿔도 화면 칸이 안 따라와서, `setText('')`를 해도 입력창이 안 비워진다(R1). property만 고치면 화면은 맞지만 HTML에 옛 value가 남아 "처음부터 그린 것과 같다"(2-2 patch 보장)가 HTML 비교에서 깨진다. 대가: value 갈래만 두 줄. `checked` 같은 다른 property는 명세에 없어서 안 넣는다. 실제 React는 property만 고친다. 성능 영향: 상수
+- **컴포넌트 메모 펼치기**: diff 전에 다 펼친다(A). App 실행 결과에서 `type`이 함수인 메모를 만나면 `rootRendering = false`로 두고 실행하고, 결과 안의 메모도 이어서 펼쳐 함수 없는 VDOM을 만든다. 보관하는 옛 VDOM도 펼친 결과. 후보 B(diff 중에 펼치기)는 props가 같으면 자식 실행을 건너뛸 수 있지만, diff·vdomToDom에 메모 갈래가 생기고(특별 취급이 흩어짐, 6-1), App이 다시 실행될 때마다 `remove` 같은 함수 props가 새 객체라 `===` 비교로는 거의 건너뛰지 못한다. 대가: setState마다 자식 컴포넌트를 전부 다시 실행한다(React 기본 동작과 같음). 실제 DOM은 diff가 지켜서 입력값은 유지된다. 남는 구멍: 없음. 성능 영향: 상수 (펼치기 O(n), diff와 같은 차수)
+- **key 위치**: 바깥 `h(TodoItem, { key: t.id, ... })`에 적는다(React와 같음). 펼칠 때 메모의 key를 결과에 붙인다(`{ ...결과, key: 메모.key ?? 결과.key }`). 둘 다 있으면 바깥이 이긴다. 안 옮기면 `h()`가 key를 props에서 빼 두었기 때문에(6-2) 펼치면서 사라지고, 에러 없이 자리 비교로 바뀐다(R8·R3이 조용히 깨짐). 안쪽 `li`에 적은 key도 A 펼치기에서는 저절로 동작한다. 막으려면 코드가 더 필요한데 R-ID가 없어서 막지 않는다. 대가: 펼치기에 1줄, "바깥이 이긴다" 규칙 하나. 남는 구멍: 없음. 성능 영향: 없음
+- **"지금 누구 차례" 표시**: 지금 실행 중인 컴포넌트 함수를 담아 둔다 (`current = App / TodoItem / null`). `useState`는 `current !== root`이면 에러를 내고, 메시지에 이름을 넣는다 ("TodoItem에서 useState를 불렀습니다. 상태는 App에 두고 props로 넘기세요"). 후보: 참·거짓 `rootRendering` / 실행 중 컴포넌트 / 깊이. 에러는 쓰는 사람이 보는 것이라 어디서 불렀는지 바로 알려 주는 쪽을 골랐다 (6-1 "쓰는 사람이 편하게"). 깊이는 쓰는 곳이 없고 +1/−1 짝을 맞춰야 해서 뺐다. 대가: 루트를 기억하는 변수 하나. 남는 구멍: 컴포넌트 안에서 에러가 나 멈추면 표시가 그대로 남을 수 있다 → 되돌리는 줄을 `try / finally`에 둔다. 성능 영향: 없음 (`useState`마다 `if` 한 줄)
+- **render 모양**: 함수 `render(App, el)`로 하고, 기존 `FunctionComponent` 클래스(`mount`/`update`) 뼈대는 쓰지 않는다. 기억할 값(`root`, `hooks`, `oldVdom`, `container`, `rootNode`)은 `render` 안에서 만든 객체 하나에 둔다. 처음 그리기는 `render`가, 다시 그리기는 setState가 부르는 함수가 맡는다. 후보: 가 함수 / 나 클래스 `new FunctionComponent(App).mount(el)` / 다 클래스를 `render`로 감싸기. 명세 2-1 공개 API와 3번 예시를 그대로 두고, 코드 스타일(이전 상태를 받아 다음 상태를 돌려준다)과 맞추기 쉽다. 나는 쓰는 쪽 코드와 명세를 바꿔야 하고, 다는 껍데기가 두 겹이 된다. 대가: 팀 뼈대를 안 쓴다 (팀에 알리기). 남는 구멍: 없음 (어느 쪽이든 `useState`가 지금 앱을 알려면 모듈 변수 `current`가 필요하다). 성능 영향: 없음
