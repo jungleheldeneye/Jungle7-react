@@ -13,14 +13,22 @@
       <button id="btn-back" type="button">◀ 뒤로</button>
       <span id="history-pos" class="pos">1 / 1</span>
       <button id="btn-forward" type="button">앞으로 ▶</button>
-      <button id="btn-patch" type="button" class="primary">Patch</button>
+      <button id="btn-patch" type="button" class="primary" disabled>Patch</button>
     </div>
   </header>
 
   <main class="grid">
+    <!-- 테스트 영역: 로드 시 VDOM으로 렌더링된다. 사용자가 자유롭게 수정 -->
+    <section class="panel">
+      <h2>테스트 영역 <small>직접 수정하거나 아래 HTML을 고치세요</small></h2>
+      <div id="test-area" class="area" contenteditable="true" spellcheck="false"></div>
+      <label class="source-label" for="test-source">테스트 영역 HTML</label>
+      <textarea id="test-source" spellcheck="false" aria-describedby="pending-summary"></textarea>
+    </section>
+
     <!-- 실제 영역: 페이지 로드 시 이 HTML이 처음 VDOM이 된다. Patch는 이 영역에만 반영된다 -->
     <section class="panel">
-      <h2>실제 영역 <small>바뀐 부분만 반영됨</small></h2>
+      <h2>실제 영역 <small>Patch를 누르면 변경사항이 반영돼요</small></h2>
       <div id="real-area" class="area">
         <div class="card">
           <h3 class="title">오늘 할 일</h3>
@@ -30,24 +38,63 @@
             <li>공부</li>
           </ul>
           <p class="count">3개 중 1개 완료</p>
-          <input type="text" placeholder="여기 입력해두고 Patch 해보세요">
+          <label>
+            입력값 보존 확인
+            <input type="text" placeholder="안녕">
+          </label>
         </div>
       </div>
     </section>
 
-    <!-- 테스트 영역: 로드 시 VDOM으로 렌더링된다. 사용자가 자유롭게 수정 -->
-    <section class="panel">
-      <h2>테스트 영역 <small>직접 수정하거나 아래 HTML을 고치세요</small></h2>
-      <div id="test-area" class="area" contenteditable="true" spellcheck="false"></div>
-      <label class="source-label" for="test-source">테스트 영역 HTML</label>
-      <textarea id="test-source" spellcheck="false"></textarea>
-    </section>
   </main>
+
+  <section class="panel log-panel">
+    <h2>적용 예정 변경</h2>
+    <p id="pending-summary" class="summary" role="status">테스트 영역을 편집하면 차이가 여기에 표시돼요.</p>
+    <pre id="pending-log" class="log"></pre>
+    <details id="vdom-details" class="vdom-details">
+      <summary>전체 VDOM 보기</summary>
+      <div class="vdom-trees">
+        <div>
+          <h3>적용 전 VDOM</h3>
+          <pre id="current-vdom" class="log"></pre>
+        </div>
+        <div>
+          <h3>편집 후 VDOM</h3>
+          <pre id="draft-vdom" class="log"></pre>
+        </div>
+      </div>
+    </details>
+  </section>
 
   <section class="panel log-panel">
     <h2>마지막 Patch 결과</h2>
     <p id="summary" class="summary">아직 Patch하지 않았어요.</p>
     <pre id="patch-log" class="log"></pre>
+    <details id="applied-vdom-details" class="vdom-details">
+      <summary>전체 VDOM 보기</summary>
+      <p id="applied-vdom-empty" class="summary">Patch를 적용하면 전후 VDOM을 볼 수 있어요.</p>
+      <div id="applied-vdom-trees" class="vdom-trees" hidden>
+        <div>
+          <h3>적용 전 VDOM</h3>
+          <pre id="applied-before" class="log"></pre>
+        </div>
+        <div>
+          <h3>적용 후 VDOM</h3>
+          <pre id="applied-after" class="log"></pre>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <section class="panel log-panel">
+    <h2>State History</h2>
+    <details id="history-details" class="vdom-details">
+      <summary>저장된 VDOM 보기</summary>
+      <label class="source-label" for="history-select">저장 시점</label>
+      <select id="history-select"></select>
+      <pre id="history-vdom" class="log"></pre>
+    </details>
   </section>
 
   <script type="module" src="./main.js"></script>
