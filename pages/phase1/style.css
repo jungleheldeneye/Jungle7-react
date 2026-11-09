@@ -102,6 +102,18 @@ textarea {
 textarea.invalid { border-color: var(--bad); }
 
 .log-panel { max-width: 1200px; margin: 16px auto 0; }
+.vdom-details { margin-top: 12px; }
+.vdom-details summary { cursor: pointer; }
+.vdom-trees {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.vdom-trees h3 { margin: 0 0 6px; font-size: 13px; }
+.vdom-trees[hidden] { display: none; }
+.vdom-trees mark { background: #ffe69a; color: #382500; border-radius: 2px; }
+#history-select { font: inherit; margin-bottom: 8px; }
 .summary { margin: 0 0 8px; }
 .log {
   margin: 0;

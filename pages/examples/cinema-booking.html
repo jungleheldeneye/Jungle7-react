@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>밤의 극장 · 좌석 예매</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --background: #101118;
+      --panel: #191b25;
+      --surface: #242735;
+      --line: #3b4053;
+      --text: #f6f5fa;
+      --muted: #b5b9cc;
+      --accent: #f6ce83;
+      --accent-ink: #291c06;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text);
+      font: 1rem/1.55 system-ui, sans-serif;
+    }
+    h1, h2, p { margin: 0; }
+    button { font: inherit; }
+    button:enabled { cursor: pointer; }
+    button:focus-visible { outline: 2px solid white; outline-offset: 2px; }
+    .shell { width: min(100% - 32px, 86rem); margin-inline: auto; padding-block: 24px 48px; }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+    #booking { min-width: 0; container-type: inline-size; }
+    #react-inspector { min-width: 0; position: sticky; inset-block-start: 16px; }
+    .booking-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin-block-end: 14px; }
+    .booking-heading h1 { font-size: 1.25rem; }
+    .muted { color: var(--muted); }
+    .booking-grid { display: grid; gap: 16px; align-items: start; }
+    @container (min-width: 39rem) {
+      .booking-grid { grid-template-columns: minmax(0, 1.6fr) minmax(14rem, 1fr); }
+    }
+    .panel { min-width: 0; padding: clamp(12px, 3vw, 24px); border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+    .panel h2 { font-size: 1.2rem; }
+    .panel-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; }
+    .small { font-size: .875rem; }
+    .screen {
+      width: 85%;
+      margin: 24px auto 20px;
+      padding-block: 8px 0;
+      border-block-start: 3px solid #c7bedf;
+      border-radius: 45% 45% 0 0;
+      color: var(--muted);
+      text-align: center;
+      font-size: .75rem;
+      letter-spacing: .2em;
+    }
+    .seat-map { display: grid; gap: 8px; }
+    .seat-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr)) clamp(6px, 2vw, 20px) repeat(3, minmax(0, 1fr));
+      gap: clamp(4px, 1vw, 8px);
+    }
+    .seat {
+      min-width: 0;
+      min-height: 44px;
+      padding: 0;
+      border: 1px solid #626981;
+      border-radius: 8px 8px 5px 5px;
+      background: var(--surface);
+      color: var(--text);
+      font-size: .875rem;
+      font-weight: 650;
+    }
+    .seat:nth-child(4) { grid-column: 5; }
+    .seat--premium { border-color: #a797d5; }
+    .seat:enabled:hover { border-color: var(--accent); }
+    .seat[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+    .seat:disabled { border-color: var(--line); background: #161720; color: #9b9fb4; text-decoration: line-through; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-block-start: 16px; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend i { width: .75rem; height: .75rem; border: 1px solid #626981; border-radius: 3px; background: var(--surface); }
+    .legend .premium { border-color: #a797d5; }
+    .legend .picked { border-color: var(--accent); background: var(--accent); }
+    .legend .booked i { border-color: var(--line); background: #161720; }
+    .hold { color: var(--accent); font-variant-numeric: tabular-nums; }
+    .summary-body { margin-block: 16px; }
+    .summary-body ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+    .price-line { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 2px 12px; }
+    .total { padding-block: 14px; border-block-start: 1px solid var(--line); }
+    .total strong { color: var(--accent); font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+    .notice { margin-block-end: 12px; color: var(--accent); }
+    .notice:empty { margin: 0; }
+    .actions { display: grid; gap: 8px; }
+    .action {
+      min-height: 44px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 650;
+    }
+    .action--primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+    .action:disabled { border-color: var(--line); background: #272936; color: var(--muted); }
+    .inspector {
+      padding: 10px 12px;
+      background: #000;
+      color: #fff;
+      font: .8125rem/1.55 ui-monospace, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    .inspector dl, .inspector dd { margin: 0; }
+    .inspector-row {
+      display: grid;
+      grid-template-columns: 5.25rem minmax(0, 1fr);
+      gap: 8px;
+      padding: 3px 4px;
+      overflow-wrap: anywhere;
+    }
+    .inspector-vdom { margin-block-start: 8px; padding-block-start: 8px; border-block-start: 1px solid var(--line); }
+    .inspector-vdom summary { cursor: pointer; }
+    .inspector-vdom pre {
+      max-height: min(45dvh, 24rem);
+      overflow: auto;
+      margin: 8px 0 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font: inherit;
+    }
+    @media (max-width: 52rem) {
+      .workspace { grid-template-columns: minmax(0, 1fr); }
+      #react-inspector { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell workspace">
+    <div id="booking"></div>
+    <div id="react-inspector"></div>
+  </main>
+  <noscript>좌석을 예매하려면 자바스크립트를 켜 주세요.</noscript>
+
+  <script type="module">
+    import { FunctionComponent } from '../../src/component.js';
+    import { h } from '../../src/vdom.js';
+    import { useEffect, useMemo, useState } from '../../src/hooks.js';
+
+    const HOLD_SECONDS = 120;
+    const NUMBER = new Intl.NumberFormat('ko-KR');
+    const STANDARD = { label: '일반석', price: 10000 };
+    const PREMIUM = { label: '프리미엄석', price: 14000 };
+    const ROWS = ['A', 'B', 'C', 'D'].map((row, index) =>
+      Array.from({ length: 6 }, (_, column) => ({
+        id: `${row}${column + 1}`,
+        tier: index < 2 ? STANDARD : PREMIUM,
+      })),
+    );
+    const SEATS = ROWS.flat();
+
+    function formatPrice(price) {
+      return `${NUMBER.format(price)}원`;
+    }
+
+    function remainingTime(deadline, now = Date.now()) {
+      return Math.max(0, Math.ceil((deadline - now) / 1000));
+    }
+
+    function formatTime(seconds) {
+      return [Math.floor(seconds / 60), seconds % 60].map((part) => String(part).padStart(2, '0')).join(':');
+    }
+
+    function summarize(selectedIds) {
+      const seats = SEATS.filter(({ id }) => selectedIds.includes(id));
+      return { seats, total: seats.reduce((total, seat) => total + seat.tier.price, 0) };
+    }
+
+    function clearSelection(booking, expired = false) {
+      return { ...booking, selectedIds: [], deadline: null, seconds: 0, receipt: null, expired };
+    }
+
+    function setBookingFrom(setBooking, source, update) {
+      setBooking((current) => {
+        const next = update(current);
+        return next === current ? current : { ...next, source };
+      });
+    }
+
+    function SeatMap({ selectedIds, bookedIds, onSelect }) {
+      return h('section', { class: 'panel', 'aria-labelledby': 'seat-heading' },
+        h('div', { class: 'panel-heading' },
+          h('h2', { id: 'seat-heading' }, '좌석 선택'),
+          h('p', { class: 'muted small' }, `예매 가능 ${SEATS.length - bookedIds.length}석`),
+        ),
+        h('p', { class: 'screen' }, 'SCREEN'),
+        h('div', { class: 'seat-map' }, ROWS.map((row) =>
+          h('div', { class: 'seat-row' }, row.map(({ id, tier }) => {
+            const selected = selectedIds.includes(id);
+            const booked = bookedIds.includes(id);
+            const label = `${id} ${tier.label}, ${booked ? '예매 완료' : formatPrice(tier.price)}`;
+            return h('button', {
+              type: 'button',
+              class: tier === PREMIUM ? 'seat seat--premium' : 'seat',
+              'data-seat': id,
+              'aria-label': label,
+              'aria-pressed': booked ? null : String(selected),
+              disabled: booked,
+              onClick: onSelect,
+            }, id);
+          })),
+        )),
+        h('div', { class: 'legend small' },
+          h('span', {}, h('i', { 'aria-hidden': 'true' }), `일반석 ${formatPrice(STANDARD.price)}`),
+          h('span', {}, h('i', { class: 'premium', 'aria-hidden': 'true' }), `프리미엄석 ${formatPrice(PREMIUM.price)}`),
+          h('span', {}, h('i', { class: 'picked', 'aria-hidden': 'true' }), '선택'),
+          h('span', { class: 'booked' }, h('i', { 'aria-hidden': 'true' }), '예매 완료'),
+        ),
+      );
+    }
+
+    function BookingSummary({ summary, receipt, seconds, expired, onConfirm, onClear }) {
+      const { seats, total } = receipt ?? summary;
+      return h('section', { class: 'panel', 'aria-labelledby': 'summary-heading' },
+        h('div', { class: 'panel-heading' },
+          h('h2', { id: 'summary-heading' }, receipt ? '예매 완료' : '예매 요약'),
+          h('p', { class: 'hold small', role: receipt ? null : 'timer' },
+            receipt ? '2관 · 19:30' : seconds > 0 ? `남은 시간 ${formatTime(seconds)}` : '선택 시 2분간 유지',
+          ),
+        ),
+        h('div', { class: 'summary-body' }, seats.length > 0
+          ? h('ul', { 'aria-label': '좌석 내역' }, seats.map(({ id, tier }) =>
+              h('li', { class: 'price-line' },
+                h('span', {}, `${id} · ${tier.label}`),
+                h('span', { class: 'muted' }, formatPrice(tier.price)),
+              ),
+            ))
+          : h('p', { class: 'muted' }, '좌석을 고르면 여기에 표시돼요.'),
+        ),
+        h('p', { class: 'price-line total', 'aria-live': 'polite', 'aria-atomic': 'true' },
+          h('span', {}, `${seats.length}석 합계`),
+          h('strong', { id: 'booking-total' }, formatPrice(total)),
+        ),
+        h('p', { class: 'notice small', role: 'status' }, expired
+          ? '선택 시간이 끝났어요. 좌석을 다시 골라 주세요.'
+          : receipt ? '선택한 좌석의 모의 예매가 완료됐어요.' : null,
+        ),
+        h('div', { class: 'actions' },
+          h('button', {
+            type: 'button', class: 'action action--primary', onClick: onConfirm,
+            disabled: seats.length === 0,
+          }, receipt ? '다른 좌석 고르기' : '예매 확정'),
+          seats.length > 0 && !receipt
+            ? h('button', { type: 'button', class: 'action', onClick: onClear }, '선택 비우기')
+            : null,
+        ),
+      );
+    }
+
+    function BookingApp() {
+      const [booking, setBooking] = useState({
+        selectedIds: [], bookedIds: ['A2', 'B5', 'D4'],
+        deadline: null, seconds: 0, receipt: null, expired: false,
+      });
+      const { selectedIds, bookedIds, deadline, seconds, receipt, expired } = booking;
+      const summary = useMemo(() => summarize(selectedIds), [selectedIds]);
+
+      // 같은 이벤트 함수를 넘겨 타이머가 바뀔 때 좌석 리스너를 다시 연결하지 않는다.
+      const actions = useMemo(() => ({
+        onSelect(event) {
+          const id = event.currentTarget.dataset.seat;
+          setBookingFrom(setBooking, `${id} 좌석 클릭`, (current) => {
+            if (current.bookedIds.includes(id)) return current;
+            const now = Date.now();
+            const active = current.deadline !== null && current.deadline <= now ? clearSelection(current) : current;
+            const ids = active.selectedIds.includes(id)
+              ? active.selectedIds.filter((selected) => selected !== id)
+              : [...active.selectedIds, id];
+            if (ids.length === 0) return clearSelection(active);
+            const nextDeadline = active.deadline ?? now + HOLD_SECONDS * 1000;
+            return {
+              ...active, selectedIds: ids, deadline: nextDeadline,
+              seconds: remainingTime(nextDeadline, now), receipt: null, expired: false,
+            };
+          });
+        },
+        onClear() {
+          setBookingFrom(setBooking, '선택 비우기', clearSelection);
+        },
+        onConfirm(event) {
+          setBookingFrom(setBooking, event.currentTarget.textContent, (current) => {
+            if (current.receipt) return clearSelection(current);
+            if (current.selectedIds.length === 0) return current;
+            if (remainingTime(current.deadline) === 0) return clearSelection(current, true);
+            return {
+              ...clearSelection(current),
+              bookedIds: [...current.bookedIds, ...current.selectedIds],
+              receipt: summarize(current.selectedIds),
+            };
+          });
+        },
+      }), [setBooking]);
+
+      useEffect(() => {
+        if (deadline === null) return;
+        const timer = setInterval(() => {
+          setBookingFrom(setBooking, '타이머 갱신', (current) => {
+            if (current.deadline !== deadline) return current;
+            const nextSeconds = remainingTime(deadline);
+            if (nextSeconds === 0) return clearSelection(current, true);
+            return nextSeconds === current.seconds ? current : { ...current, seconds: nextSeconds };
+          });
+        }, 200);
+        return () => clearInterval(timer);
+      }, [deadline]);
+
+      return h('div', {},
+        h('header', { class: 'booking-heading' },
+          h('h1', {}, '영화관 좌석 예매'),
+          h('p', { class: 'muted small' }, '오늘 19:30 · 2관'),
+        ),
+        h('div', { class: 'booking-grid' },
+          h(SeatMap, { selectedIds, bookedIds, onSelect: actions.onSelect }),
+          h(BookingSummary, { summary, receipt, seconds, expired, onConfirm: actions.onConfirm, onClear: actions.onClear }),
+        ),
+      );
+    }
+
+    const INSPECTOR_LABELS = ['setState', 'useState', 'useMemo', 'VDOM', 'useEffect'];
+
+    function ReactInspector(_props, { state: { rows, vnode } }) {
+      const [expanded, setExpanded] = useState(false);
+      const onToggle = useMemo(() => (event) => setExpanded(event.currentTarget.open), [setExpanded]);
+
+      return h('aside', { class: 'inspector', 'aria-label': '미니 React 실시간 상태' },
+        h('dl', {}, rows.map((value, index) =>
+          h('div', { class: 'inspector-row' },
+            h('dt', { translate: 'no' }, `${INSPECTOR_LABELS[index]}:`),
+            h('dd', {}, value),
+          ),
+        )),
+        h('details', { class: 'inspector-vdom', onToggle },
+          h('summary', {}, '현재 VDOM 보기'),
+          expanded && vnode ? h('pre', { tabindex: '0', 'aria-label': '현재 예매 화면의 VDOM' },
+            JSON.stringify(vnode, (_, value) => typeof value === 'function' ? '[함수]' : value, 2),
+          ) : null,
+        ),
+      );
+    }
+
+    function countVdomNodes(node) {
+      if (typeof node === 'string') return 1;
+      return 1 + node.children.reduce((count, child) => count + countVdomNodes(child), 0);
+    }
+
+    function timerEffectStatus(effect, previousEffect) {
+      if (!previousEffect) return '첫 실행 · 타이머 대기';
+      if (effect === previousEffect) return effect.cleanup ? '타이머 유지' : '타이머 대기';
+      if (effect.cleanup) return previousEffect.cleanup ? '타이머 재시작' : '타이머 시작';
+      return '타이머 정리';
+    }
+
+    const bookingApp = new FunctionComponent(BookingApp);
+    const inspector = new FunctionComponent(ReactInspector, {}, { rows: [], vnode: null });
+    inspector.mount(document.getElementById('react-inspector'));
+
+    let previousMemo;
+    let previousEffect;
+    let renderNumber = 0;
+    bookingApp.mount(document.getElementById('booking'), ({ previousVdom, vnode, patches }) => {
+      const [stateSlot, memo] = bookingApp.hooks;
+      const effect = bookingApp.hooks.find((hook) => hook.type === 'effect');
+      const { selectedIds, bookedIds, deadline, seconds, expired, source } = stateSlot.value;
+      const hold = deadline === null ? (expired ? '시간 만료' : '대기') : formatTime(seconds);
+      const change = previousVdom === undefined ? '초기 생성' : `Diff ${patches.length}건`;
+      renderNumber++;
+      const values = [
+        source ? `${expired && source === '타이머 갱신' ? '시간 만료' : source} · 반영 #${renderNumber}` : '초기 상태 · 호출 없음',
+        `선택 ${selectedIds.join(', ') || '없음'} · 예매 ${bookedIds.length}석 · ${hold}`,
+        `합계 ${formatPrice(memo.value.total)} · ${memo === previousMemo ? '재사용' : '계산'}`,
+        `#${renderNumber} · 노드 ${countVdomNodes(vnode)}개 · ${change}`,
+        timerEffectStatus(effect, previousEffect),
+      ];
+      previousMemo = memo;
+      previousEffect = effect;
+
+      inspector.setState({ rows: values, vnode });
+    });
+  </script>
+</body>
+</html>

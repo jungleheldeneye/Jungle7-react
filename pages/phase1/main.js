@@ -45,7 +45,9 @@ const historyVdom = $('history-vdom');
 let history = [];
 let index = 0;
 let pending = null;
+let pendingError = '';
 let lastApplied = null;
+let previousTestItems = new WeakSet();
 
 // ── 영역 헬퍼 ─────────────────────────────────────────────
 const rootOf = (area) => area.firstElementChild;
@@ -56,6 +58,14 @@ function singleRootOf(container) {
     node.nodeType === Node.TEXT_NODE && node.data.trim() !== '',
   );
   return hasOutsideText ? null : rootOf(container);
+}
+
+function assignListKeys(root) {
+  const newItems = root.querySelectorAll('li:not([data-key])');
+  for (const item of newItems) {
+    item.dataset.key = globalThis.crypto.randomUUID();
+  }
+  return newItems.length > 0;
 }
 
 /** 테스트 영역을 vnode로 통째로 다시 그림 (테스트 영역은 사용자가 고치는 곳이라 diff 대상이 아님) */
@@ -77,11 +87,30 @@ function syncTestFromSource() {
   updatePending(root);
 }
 
+function onTestInput() {
+  // 브라우저가 줄을 나누거나 복사할 때 원래 항목의 키까지 복제할 수 있다.
+  for (const item of testArea.querySelectorAll('li[data-key]')) {
+    if (previousTestItems.has(item)) continue;
+    const hasMatchingSibling = Array.from(item.parentElement.children).some((sibling) =>
+      sibling !== item && sibling.getAttribute('data-key') === item.dataset.key,
+    );
+    if (hasMatchingSibling) item.removeAttribute('data-key');
+  }
+  syncSourceFromTest();
+}
+
 function updatePending(root) {
+  previousTestItems = new WeakSet(testArea.querySelectorAll('li'));
   pending = null;
+  pendingError = '';
   if (root) {
     const vnode = domToVdom(root);
-    pending = { vnode, patches: diff(history[index], vnode) };
+    try {
+      pending = { vnode, patches: diff(history[index], vnode) };
+    } catch (error) {
+      if (error?.name !== 'DuplicateKeyError') throw error;
+      pendingError = error.message;
+    }
   }
   showPending();
 }
@@ -94,7 +123,7 @@ function showPending() {
   pendingLog.textContent = count > 0 ? JSON.stringify(pending.patches, null, 2) : '';
 
   if (!pending) {
-    pendingSummary.textContent = '테스트 영역의 내용을 바깥 태그 하나로 감싸세요.';
+    pendingSummary.textContent = pendingError || '테스트 영역의 내용을 바깥 태그 하나로 감싸세요.';
   } else if (count === 0) {
     pendingSummary.textContent = '적용할 변경이 없어요. 테스트 영역을 편집해 보세요.';
   } else {
@@ -121,9 +150,21 @@ function showAppliedTrees() {
 }
 
 function renderComparison(beforeOutput, afterOutput, before, after, patches = []) {
-  const changes = new Map(patches.map((change) => [change.path.join('.'), change]));
-  renderVdomTree(beforeOutput, before, changes);
-  renderVdomTree(afterOutput, after, changes);
+  const beforeChanges = new Map();
+  const afterChanges = new Map();
+  for (const change of patches) {
+    if (change.type !== 'CREATE') addChange(beforeChanges, change.path, change);
+    if (change.type !== 'REMOVE') addChange(afterChanges, change.nextPath ?? change.path, change);
+  }
+  renderVdomTree(beforeOutput, before, beforeChanges);
+  renderVdomTree(afterOutput, after, afterChanges);
+}
+
+function addChange(changes, path, change) {
+  const index = path.join('.');
+  const entries = changes.get(index) ?? [];
+  entries.push(change);
+  changes.set(index, entries);
 }
 
 function showHistory() {
@@ -161,23 +202,23 @@ function renderVdomTree(output, vnode, changes = new Map()) {
   }
 
   function visit(node, path) {
-    const change = changes.get(path.join('.'));
-    const type = change?.type;
+    const entries = changes.get(path.join('.')) ?? [];
+    const propChange = entries.find(({ type }) => type === 'PROPS');
     const indent = '  '.repeat(path.length);
     append(indent);
 
     if (typeof node === 'string') {
-      append(JSON.stringify(node), Boolean(type));
+      append(JSON.stringify(node), entries.length > 0);
     } else {
-      append(`<${node.type}`, Boolean(type && type !== 'PROPS'));
+      append(`<${node.type}`, entries.some(({ type }) => type !== 'PROPS'));
       for (const [name, value] of Object.entries(node.props)) {
-        const changed = type === 'PROPS' && Object.hasOwn(change.props, name);
+        const changed = propChange && Object.hasOwn(propChange.props, name);
         append(` ${name}=${JSON.stringify(value)}`, changed);
       }
       append('>');
     }
 
-    if (type) append(` [${type}]`, true);
+    if (entries.length) append(` [${entries.map(({ type }) => type).join(', ')}]`, true);
     append('\n');
 
     if (typeof node !== 'string') {
@@ -216,10 +257,12 @@ function report(patches, records) {
   const count = (type) => records.filter((r) => r.type === type).length;
   const added = records.reduce((n, r) => n + r.addedNodes.length, 0);
   const removed = records.reduce((n, r) => n + r.removedNodes.length, 0);
+  const moved = patches.filter(({ type }) => type === 'MOVE').length;
+  const moveInfo = moved > 0 ? ` (이동 ${moved}건 포함)` : '';
 
   summary.textContent = patches.length === 0
     ? '변경 없음 — 실제 DOM을 건드리지 않았어요.'
-    : `변경 ${patches.length}개 → DOM 조작: 추가 ${added} · 삭제 ${removed} · 속성 ${count('attributes')} · 텍스트 ${count('characterData')}`;
+    : `변경 ${patches.length}개 → DOM 기록: 추가 ${added} · 삭제 ${removed} · 속성 ${count('attributes')} · 텍스트 ${count('characterData')}${moveInfo}`;
   patchLog.textContent = JSON.stringify(patches, null, 2);
 }
 
@@ -233,7 +276,9 @@ function updateControls() {
 
 // ── 동작 ──────────────────────────────────────────────────
 function onLoad() {
-  const vdom0 = domToVdom(rootOf(realArea));
+  const root = rootOf(realArea);
+  assignListKeys(root);
+  const vdom0 = domToVdom(root);
   history = [vdom0];
   index = 0;
   renderTestArea(vdom0);
@@ -242,6 +287,8 @@ function onLoad() {
 
 function onPatch() {
   if (!pending?.patches.length) return;
+  // 새 항목을 적용할 때 발급한 키를 HTML과 히스토리에 함께 저장한다.
+  if (assignListKeys(rootOf(testArea))) syncSourceFromTest();
   const { vnode, patches } = pending;
   applyToReal(patches, vnode);
 
@@ -269,7 +316,7 @@ function go(step) {
 btnPatch.addEventListener('click', onPatch);
 btnBack.addEventListener('click', () => go(-1));
 btnForward.addEventListener('click', () => go(1));
-testArea.addEventListener('input', syncSourceFromTest);
+testArea.addEventListener('input', onTestInput);
 testSource.addEventListener('input', syncTestFromSource);
 vdomDetails.addEventListener('toggle', showVdomTrees);
 appliedDetails.addEventListener('toggle', showAppliedTrees);

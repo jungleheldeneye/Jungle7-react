@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 2 · Component · State · Hooks</title>
+  <link rel="stylesheet" href="../phase1/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Phase 2 · Component · State · Hooks</h1>
+  </header>
+  <main class="log-panel">
+    <div class="vdom-trees">
+      <section class="panel">
+        <h2>실제 화면</h2>
+        <div id="app" class="area"></div>
+      </section>
+      <section class="panel">
+        <h2>Hook 검증</h2>
+        <p class="summary">완료 버튼을 누르면 완료 개수를 다시 계산하고 탭 제목을 바꿔요. 완료 항목의 표시만 바꾸면 계산 결과를 재사용해요.</p>
+        <p id="hook-summary" class="summary" role="status"></p>
+        <pre id="hook-log" class="log"></pre>
+      </section>
+    </div>
+    <section class="panel log-panel">
+      <h2>렌더링 결과</h2>
+      <p id="render-summary" class="summary"></p>
+      <details class="vdom-details">
+        <summary>Diff 변경 목록</summary>
+        <pre id="diff-log" class="log"></pre>
+      </details>
+      <details class="vdom-details">
+        <summary>전체 VDOM 보기</summary>
+        <div class="vdom-trees">
+          <div><h3>이전 VDOM</h3><pre id="previous-vdom" class="log"></pre></div>
+          <div><h3>새 VDOM</h3><pre id="next-vdom" class="log"></pre></div>
+        </div>
+      </details>
+    </section>
+  </main>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
