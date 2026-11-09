@@ -4,7 +4,7 @@
  * 이 파일은 src/의 함수 4개만 가져다 쓴다. 각자 구현을 src/에 넣으면 그대로 동작한다.
  *
  *   domToVdom(node)        실제 DOM 노드 → VDOM
- *                          (공백만 있는 텍스트 노드, 주석은 버린다고 가정)
+ *                          (공백만 있는 텍스트 노드와 주석도 버리지 않는다, docs/design.md 6-2)
  *   vdomToDom(vnode)       VDOM → 실제 DOM 노드
  *   diff(oldVnode, newVnode)  → 변경 목록 (배열)
  *   patch(rootNode, patches)  변경 목록을 rootNode 기준으로 실제 DOM에 반영
@@ -45,7 +45,10 @@ const historyVdom = $('history-vdom');
 let history = [];
 let index = 0;
 let pending = null;
+let pendingError = '';   // 같은 key가 두 번 있어서 diff가 에러를 냈을 때 그 메시지
 let lastApplied = null;
+// 지난번 편집 때 테스트 영역에 있던 <li>들. 이번에 새로 생긴 <li>를 가려내는 데 쓴다
+let previousTestItems = new WeakSet();
 
 // ── 영역 헬퍼 ─────────────────────────────────────────────
 const rootOf = (area) => area.firstElementChild;
@@ -58,6 +61,16 @@ function singleRootOf(container) {
   return hasOutsideText ? null : rootOf(container);
 }
 
+/**
+ * key 없는 <li>에 랜덤 key를 붙인다 (R8 확인용, dohyun 브랜치에서 가져옴)
+ *   <li>빨래</li> → <li data-key="a1f…">빨래</li>
+ * HTML에는 key가 없어서 그냥 두면 자리로 비교한다. 그러면 맨 앞에 <li>를 하나 넣었을 때 전부 바뀐 걸로 나온다.
+ * key를 찍어 두면 domToVdom이 data-key를 key로 읽어서, 기존 <li>는 짝이 맞고 CREATE 1개만 나온다.
+ */
+function assignListKeys(root) {
+  root.querySelectorAll('li:not([data-key])').forEach((item) => { item.dataset.key = crypto.randomUUID(); });
+}
+
 /** 테스트 영역을 vnode로 통째로 다시 그림 (테스트 영역은 사용자가 고치는 곳이라 diff 대상이 아님) */
 function renderTestArea(vnode) {
   testArea.replaceChildren(vdomToDom(vnode));
@@ -65,23 +78,54 @@ function renderTestArea(vnode) {
 }
 
 function syncSourceFromTest() {
+  const root = singleRootOf(testArea);
+  // 새 <li>에 key를 먼저 찍어야 "적용 예정 변경"이 실제 Patch 결과와 같다
+  if (root) assignListKeys(root);
   testSource.value = testArea.innerHTML;
-  updatePending(singleRootOf(testArea));
+  updatePending(root);
 }
 
 function syncTestFromSource() {
   const tpl = document.createElement('template');
   tpl.innerHTML = testSource.value.trim();
   const root = singleRootOf(tpl.content);
-  if (root) testArea.replaceChildren(root);
+  // HTML 칸은 치는 중이라 다시 쓰지 않는다(커서가 튐). key는 테스트 영역에만 찍고, Patch 때 HTML 칸에 옮긴다
+  if (root) {
+    assignListKeys(root);
+    testArea.replaceChildren(root);
+  }
   updatePending(root);
 }
 
+/**
+ * 테스트 영역을 손으로 고쳤을 때.
+ * 편집 영역에서 Enter를 치면 브라우저가 <li>를 복제하면서 data-key까지 똑같이 복사한다.
+ *   <li data-key="a1">빨래</li> + Enter → <li data-key="a1">빨래</li><li data-key="a1"></li>
+ * 같은 key가 두 개면 diff가 에러를 내니, 이번에 새로 생긴 쪽의 key를 지운다 (Patch 때 새 key를 받는다)
+ */
+function onTestInput() {
+  for (const item of testArea.querySelectorAll('li[data-key]')) {
+    if (previousTestItems.has(item)) continue;   // 원래 있던 <li>는 key를 지킨다
+    const hasTwin = [...item.parentElement.children].some((sibling) =>
+      sibling !== item && sibling.dataset.key === item.dataset.key,
+    );
+    if (hasTwin) item.removeAttribute('data-key');
+  }
+  syncSourceFromTest();
+}
+
 function updatePending(root) {
+  previousTestItems = new WeakSet(testArea.querySelectorAll('li'));
   pending = null;
+  pendingError = '';
   if (root) {
     const vnode = domToVdom(root);
-    pending = { vnode, patches: diff(history[index], vnode) };
+    try {
+      pending = { vnode, patches: diff(history[index], vnode) };
+    } catch (error) {
+      // HTML 칸에 같은 data-key를 직접 두 번 적은 경우: "같은 key가 형제 사이에 두 번 있습니다"
+      pendingError = error.message;
+    }
   }
   showPending();
 }
@@ -94,7 +138,7 @@ function showPending() {
   pendingLog.textContent = count > 0 ? JSON.stringify(pending.patches, null, 2) : '';
 
   if (!pending) {
-    pendingSummary.textContent = '테스트 영역의 내용을 바깥 태그 하나로 감싸세요.';
+    pendingSummary.textContent = pendingError || '테스트 영역의 내용을 바깥 태그 하나로 감싸세요.';
   } else if (count === 0) {
     pendingSummary.textContent = '적용할 변경이 없어요. 테스트 영역을 편집해 보세요.';
   } else {
@@ -120,10 +164,14 @@ function showAppliedTrees() {
   }
 }
 
+/**
+ * 변경의 path는 전부 "고치기 전" 위치라서, 강조는 고치기 전 트리에만 한다
+ * 한 노드에 변경이 여럿 올 수 있어 path마다 목록으로 묶는다
+ *   <ul>에 class 변경 + 자식 추가 → '0.1' → [PROPS, CREATE]  (CREATE의 path는 부모)
+ */
 function renderComparison(beforeOutput, afterOutput, before, after, patches = []) {
-  const changes = new Map(patches.map((change) => [change.path.join('.'), change]));
-  renderVdomTree(beforeOutput, before, changes);
-  renderVdomTree(afterOutput, after, changes);
+  renderVdomTree(beforeOutput, before, Map.groupBy(patches, (change) => change.path.join('.')));
+  renderVdomTree(afterOutput, after);
 }
 
 function showHistory() {
@@ -161,26 +209,30 @@ function renderVdomTree(output, vnode, changes = new Map()) {
   }
 
   function visit(node, path) {
-    const change = changes.get(path.join('.'));
-    const type = change?.type;
+    const types = (changes.get(path.join('.')) ?? []).map((change) => change.type);
+    const propsChange = changes.get(path.join('.'))?.find((change) => change.type === 'PROPS');
+    // 노드 자체가 지워지거나 바뀌거나 옮겨지면 태그를 강조. PROPS는 속성만, CREATE는 "이 안에 추가"라 태그는 그대로
+    const nodeChanged = types.some((type) => type === 'REMOVE' || type === 'REPLACE' || type === 'MOVE');
     const indent = '  '.repeat(path.length);
     append(indent);
 
-    if (typeof node === 'string') {
-      append(JSON.stringify(node), Boolean(type));
+    // 글자·주석은 { type: '#text' | '#comment', props: { nodeValue } } 모양 (6-2). 글자 변경은 PROPS로 온다
+    if (node.type === '#text') {
+      append(JSON.stringify(node.props.nodeValue), types.length > 0);
+    } else if (node.type === '#comment') {
+      append(`<!--${node.props.nodeValue}-->`, types.length > 0);
     } else {
-      append(`<${node.type}`, Boolean(type && type !== 'PROPS'));
+      append(`<${node.type}`, nodeChanged);
       for (const [name, value] of Object.entries(node.props)) {
-        const changed = type === 'PROPS' && Object.hasOwn(change.props, name);
-        append(` ${name}=${JSON.stringify(value)}`, changed);
+        append(` ${name}=${JSON.stringify(value)}`, Boolean(propsChange && Object.hasOwn(propsChange.props, name)));
       }
       append('>');
     }
 
-    if (type) append(` [${type}]`, true);
+    if (types.length > 0) append(` [${types.join(', ')}]`, true);
     append('\n');
 
-    if (typeof node !== 'string') {
+    if (node.type !== '#text' && node.type !== '#comment') {
       node.children.forEach((child, index) => visit(child, [...path, index]));
       append(`${indent}</${node.type}>\n`);
     }
@@ -233,7 +285,9 @@ function updateControls() {
 
 // ── 동작 ──────────────────────────────────────────────────
 function onLoad() {
-  const vdom0 = domToVdom(rootOf(realArea));
+  const root = rootOf(realArea);
+  assignListKeys(root);   // 처음 HTML의 <li>에 key를 찍고 시작
+  const vdom0 = domToVdom(root);
   history = [vdom0];
   index = 0;
   renderTestArea(vdom0);
@@ -242,6 +296,8 @@ function onLoad() {
 
 function onPatch() {
   if (!pending?.patches.length) return;
+  // HTML 칸에서 고친 경우 key가 테스트 영역에만 있으니 HTML 칸에도 옮겨 적는다. key는 이미 찍혀 있어서 pending은 그대로다
+  syncSourceFromTest();
   const { vnode, patches } = pending;
   applyToReal(patches, vnode);
 
@@ -269,7 +325,7 @@ function go(step) {
 btnPatch.addEventListener('click', onPatch);
 btnBack.addEventListener('click', () => go(-1));
 btnForward.addEventListener('click', () => go(1));
-testArea.addEventListener('input', syncSourceFromTest);
+testArea.addEventListener('input', onTestInput);
 testSource.addEventListener('input', syncTestFromSource);
 vdomDetails.addEventListener('toggle', showVdomTrees);
 appliedDetails.addEventListener('toggle', showAppliedTrees);
