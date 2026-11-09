@@ -35,6 +35,7 @@ export function render(Component, container) {
  *   vnode:     지난번에 그린 VDOM. 다음 diff의 "옛 VDOM" (컴포넌트 메모가 다 펼쳐진 모양)
  *   dom:       지금 화면에 붙어 있는 루트 노드. patch가 루트를 바꾸면 새 노드로 갈아 끼운다
  *   pendingEffects: 이번 렌더에서 deps가 바뀌어 실행해야 할 effect들. useEffect가 채운다
+ *   updateScheduled: setState가 다시 그리기를 예약했나. 여러 번 불러도 update는 한 번 (hooks.js)
  */
 export class FunctionComponent {
   constructor(component, props = {}) {
@@ -44,6 +45,7 @@ export class FunctionComponent {
     this.vnode = null;
     this.dom = null;
     this.pendingEffects = [];
+    this.updateScheduled = false;   // 다시 그리기가 이미 예약됐나 (hooks.js scheduleUpdate)
   }
 
   /**
