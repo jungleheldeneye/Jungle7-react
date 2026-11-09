@@ -30,6 +30,10 @@ const COMMENT_NODE = 8;
  *   <li class="done">빨래</li>
  *   → { type: 'li', props: { class: 'done' }, key: undefined,
  *       children: [{ type: '#text', props: { nodeValue: '빨래' }, children: [] }] }
+ *   <li data-key="a1">빨래</li>
+ *   → { type: 'li', props: { 'data-key': 'a1' }, key: 'a1', ... }
+ * 실제 DOM에는 key가 없어서, data-key 속성을 key로 읽는다 (R8, 6-2 key 위치)
+ * data-key는 props에도 그대로 남겨서 다시 DOM으로 만들면 속성이 살아 있다 (왕복 보장)
  */
 export function domToVdom(node) {
   if (node.nodeType === TEXT_NODE) {
@@ -46,7 +50,7 @@ export function domToVdom(node) {
   return {
     type: node.tagName.toLowerCase(),
     props,
-    key: undefined,   // 실제 DOM에는 key가 없다 (6-2)
+    key: props['data-key'],   // data-key가 없으면 undefined (자리로 비교)
     children: [...node.childNodes].map(domToVdom),
   };
 }

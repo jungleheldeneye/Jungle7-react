@@ -45,7 +45,10 @@ const historyVdom = $('history-vdom');
 let history = [];
 let index = 0;
 let pending = null;
+let pendingError = '';   // 같은 key가 두 번 있어서 diff가 에러를 냈을 때 그 메시지
 let lastApplied = null;
+// 지난번 편집 때 테스트 영역에 있던 <li>들. 이번에 새로 생긴 <li>를 가려내는 데 쓴다
+let previousTestItems = new WeakSet();
 
 // ── 영역 헬퍼 ─────────────────────────────────────────────
 const rootOf = (area) => area.firstElementChild;
@@ -58,6 +61,16 @@ function singleRootOf(container) {
   return hasOutsideText ? null : rootOf(container);
 }
 
+/**
+ * key 없는 <li>에 랜덤 key를 붙인다 (R8 확인용, dohyun 브랜치에서 가져옴)
+ *   <li>빨래</li> → <li data-key="a1f…">빨래</li>
+ * HTML에는 key가 없어서 그냥 두면 자리로 비교한다. 그러면 맨 앞에 <li>를 하나 넣었을 때 전부 바뀐 걸로 나온다.
+ * key를 찍어 두면 domToVdom이 data-key를 key로 읽어서, 기존 <li>는 짝이 맞고 CREATE 1개만 나온다.
+ */
+function assignListKeys(root) {
+  root.querySelectorAll('li:not([data-key])').forEach((item) => { item.dataset.key = crypto.randomUUID(); });
+}
+
 /** 테스트 영역을 vnode로 통째로 다시 그림 (테스트 영역은 사용자가 고치는 곳이라 diff 대상이 아님) */
 function renderTestArea(vnode) {
   testArea.replaceChildren(vdomToDom(vnode));
@@ -65,23 +78,54 @@ function renderTestArea(vnode) {
 }
 
 function syncSourceFromTest() {
+  const root = singleRootOf(testArea);
+  // 새 <li>에 key를 먼저 찍어야 "적용 예정 변경"이 실제 Patch 결과와 같다
+  if (root) assignListKeys(root);
   testSource.value = testArea.innerHTML;
-  updatePending(singleRootOf(testArea));
+  updatePending(root);
 }
 
 function syncTestFromSource() {
   const tpl = document.createElement('template');
   tpl.innerHTML = testSource.value.trim();
   const root = singleRootOf(tpl.content);
-  if (root) testArea.replaceChildren(root);
+  // HTML 칸은 치는 중이라 다시 쓰지 않는다(커서가 튐). key는 테스트 영역에만 찍고, Patch 때 HTML 칸에 옮긴다
+  if (root) {
+    assignListKeys(root);
+    testArea.replaceChildren(root);
+  }
   updatePending(root);
 }
 
+/**
+ * 테스트 영역을 손으로 고쳤을 때.
+ * 편집 영역에서 Enter를 치면 브라우저가 <li>를 복제하면서 data-key까지 똑같이 복사한다.
+ *   <li data-key="a1">빨래</li> + Enter → <li data-key="a1">빨래</li><li data-key="a1"></li>
+ * 같은 key가 두 개면 diff가 에러를 내니, 이번에 새로 생긴 쪽의 key를 지운다 (Patch 때 새 key를 받는다)
+ */
+function onTestInput() {
+  for (const item of testArea.querySelectorAll('li[data-key]')) {
+    if (previousTestItems.has(item)) continue;   // 원래 있던 <li>는 key를 지킨다
+    const hasTwin = [...item.parentElement.children].some((sibling) =>
+      sibling !== item && sibling.dataset.key === item.dataset.key,
+    );
+    if (hasTwin) item.removeAttribute('data-key');
+  }
+  syncSourceFromTest();
+}
+
 function updatePending(root) {
+  previousTestItems = new WeakSet(testArea.querySelectorAll('li'));
   pending = null;
+  pendingError = '';
   if (root) {
     const vnode = domToVdom(root);
-    pending = { vnode, patches: diff(history[index], vnode) };
+    try {
+      pending = { vnode, patches: diff(history[index], vnode) };
+    } catch (error) {
+      // HTML 칸에 같은 data-key를 직접 두 번 적은 경우: "같은 key가 형제 사이에 두 번 있습니다"
+      pendingError = error.message;
+    }
   }
   showPending();
 }
@@ -94,7 +138,7 @@ function showPending() {
   pendingLog.textContent = count > 0 ? JSON.stringify(pending.patches, null, 2) : '';
 
   if (!pending) {
-    pendingSummary.textContent = '테스트 영역의 내용을 바깥 태그 하나로 감싸세요.';
+    pendingSummary.textContent = pendingError || '테스트 영역의 내용을 바깥 태그 하나로 감싸세요.';
   } else if (count === 0) {
     pendingSummary.textContent = '적용할 변경이 없어요. 테스트 영역을 편집해 보세요.';
   } else {
@@ -236,7 +280,9 @@ function updateControls() {
 
 // ── 동작 ──────────────────────────────────────────────────
 function onLoad() {
-  const vdom0 = domToVdom(rootOf(realArea));
+  const root = rootOf(realArea);
+  assignListKeys(root);   // 처음 HTML의 <li>에 key를 찍고 시작
+  const vdom0 = domToVdom(root);
   history = [vdom0];
   index = 0;
   renderTestArea(vdom0);
@@ -245,6 +291,8 @@ function onLoad() {
 
 function onPatch() {
   if (!pending?.patches.length) return;
+  // HTML 칸에서 고친 경우 key가 테스트 영역에만 있으니 HTML 칸에도 옮겨 적는다. key는 이미 찍혀 있어서 pending은 그대로다
+  syncSourceFromTest();
   const { vnode, patches } = pending;
   applyToReal(patches, vnode);
 
@@ -272,7 +320,7 @@ function go(step) {
 btnPatch.addEventListener('click', onPatch);
 btnBack.addEventListener('click', () => go(-1));
 btnForward.addEventListener('click', () => go(1));
-testArea.addEventListener('input', syncSourceFromTest);
+testArea.addEventListener('input', onTestInput);
 testSource.addEventListener('input', syncTestFromSource);
 vdomDetails.addEventListener('toggle', showVdomTrees);
 appliedDetails.addEventListener('toggle', showAppliedTrees);
