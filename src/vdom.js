@@ -5,7 +5,7 @@
  * type이 컴포넌트 함수여도 실행하지 않고 담아만 둔다 (R5)
  */
 export function h(type, props, ...children) {
-  const { key, ...rest } = props || {};   // key는 props 밖으로 (6-2)
+  const { key, ...rest } = props || {};   // key는 props 밖으로 (6-2) -> 왼쪽 값이 비어있으면 {} 선택 
   return {
     type,
     props: rest,

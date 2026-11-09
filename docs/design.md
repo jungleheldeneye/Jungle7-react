@@ -255,10 +255,10 @@ function TodoInput({ text, onInput, onAdd }) {   // 상태 없음
 - 텍스트 노드를 VDOM에서 어떻게 표현하나 → ✅ 6-2
 - 공백·주석 노드를 버리나 → ✅ 6-2 (둔다)
 - key를 VDOM 어디에 두나 → ✅ 6-2
-- 변경 목록 형식
-- 사라진 속성 표시 방법
-- patch 방식 (path로 찾기 / 대상 노드 먼저 다 찾기 / 노드 참조 저장)
-- property vs attribute 규칙 (`value`는 property로) → `vdomToDom`까지 ✅ 6-3 (글자·주석 `nodeValue`도 property), `patch`의 `value`는 남음
+- 변경 목록 형식 → ✅ 6-3 (key 짝짓기·MOVE·같은 key 처리 포함)
+- 사라진 속성 표시 방법 → ✅ 6-3
+- patch 방식 (path로 찾기 / 대상 노드 먼저 다 찾기 / 노드 참조 저장) → ✅ 6-3 (변경마다 path로 찾기)
+- property vs attribute 규칙 (`value`는 property로) → ✅ 6-3 (글자·주석 `nodeValue`도 property, `patch`의 `value`는 attribute + property)
 - 컴포넌트 메모(`h(TodoItem, ...)`)를 언제 펼치나: diff 전에 다 펼쳐서 순수 VDOM으로 만들까, diff 중에 펼칠까
   - 이어서 정할 것: 3번 예시처럼 key가 `TodoItem` 안의 `li`에 있으면 동작하나? (실제 React에선 동작 안 하고 경고. `h(TodoItem, { key })`에 붙여야 함)
 - "지금 누구 차례" 표시 방법: 이름 / 깊이(0=루트) / 그냥 "루트 실행 중" 참·거짓
@@ -324,3 +324,13 @@ function TodoInput({ text, onInput, onAdd }) {   // 상태 없음
 - **속성 넣기**: `vdomToDom`에서 함수는 property(`el.onclick = fn`), 글자·주석의 `nodeValue`도 property(6-2), 나머지는 `setAttribute`. 왕복 결과가 원래 HTML과 같다. 대가: `value`를 property로 바꾸는 처리는 `patch`에서 다시 정해야 한다
 - **이벤트 이름**: `onclick` (DOM 그대로, 열린 질문 3). 명세 예시와 같고 이름 변환이 필요 없다
 - **배열 자식**: `h()`가 배열 자식을 한 단계 편다 (`h('ul', null, todos.map(...))`). 공개 API는 쓰는 사람이 편하게(6-1): `...`을 빠뜨리는 실수가 없어지고, 펼쳐서 넘겨도 그대로 동작한다. 대가: `h()`에 한 줄. 배열 안 자식에 key가 없을 때 알릴 수 있게 됐지만, 경고는 아직 만들지 않는다
+- **변경 목록 형식**: `CREATE {path, vnode}` / `REMOVE {path}` / `REPLACE {path, vnode}` / `PROPS {path, props}` / `MOVE {path, to}` 5가지. MOVE는 path의 노드를 빼서, 뺀 뒤 목록의 `to`번 자리에 넣는다. 노드 위치는 경로 `path: [0, 2]`(루트의 0번 자식의 2번 자식). VDOM 모양(6-2)이 그대로이고 diff.js 뼈대·phase1 페이지와 맞는다. 대가: 앞에서 지우면 뒤 번호가 밀린다 → 아래 REMOVE 순서로 막는다
+- **사라진 속성**: PROPS의 `props`에 값을 `undefined`로 넣는다 (`{ class: undefined }`). 바뀐 것과 사라진 것을 한 객체로. 대가: "지워라"는 뜻이 값에 숨어 있다
+- **REMOVE 순서**: 한 부모의 자식 삭제는 뒤 번호부터 넣는다 (`[2]` 다음 `[1]`). 앞 번호가 밀리지 않아 patch가 목록 순서대로 처리하면 된다. 대가: 목록 순서에 의미가 생겨서 patch가 순서를 바꾸면 안 된다
+- **변경 적용 순서**: 모든 path는 앞의 변경이 적용된 뒤의 위치다. diff가 자식 순서를 흉내 낸 목록(`current`)에서 번호를 읽는다. 그래서 patch는 목록을 위에서부터 순서대로 적용하기만 하면 된다. 대가: patch가 순서를 바꾸거나 건너뛰면 번호가 어긋난다
+- **key 짝짓기 이름**: key가 있으면 `'k:키'`, 없으면 자리 번호 `'i:0'`(React와 같음). 알고리즘이 하나로 끝나고, key가 하나도 없으면 자리 순서 비교와 결과가 같다. key 있는 것과 없는 것이 섞여도 된다(`h('ul', null, '제목', todos.map(...))`). 대가: key 없는 자식끼리는 여전히 자리 순서라, 앞에 끼우면 전부 변경된다. key `1`과 `'1'`은 같은 key로 본다
+- **같은 key**: 한 부모의 자식 중 같은 key가 있으면(old·new 각각) 에러. 짝을 정할 수 없어 조용히 틀린 화면(지울 노드가 남거나 만들 노드가 안 생김)이 되기 때문. "실수는 막는다"(열린 질문 4). 대가: 화면이 멈춘다
+- **순서가 바뀔 때**: MOVE를 쓰고, 그대로 둘 자식을 가장 긴 증가 부분 수열(LIS)로 골라 이동을 최소로 한다 (R8 "최소한만"). 지우고 다시 만들지 않으니 입력값이 유지된다(R3). 대가: 알고리즘이 어렵다. LIS는 처음에 읽기 쉬운 O(n²) 방식으로 짰는데, 할 일 1000개를 전부 섞었을 때 diff만 17.7ms로 16ms 기준(6-1)을 넘어서 O(n log n)(이분 탐색) 방식으로 바꿨다. 위치 찾기도 처음 한 번은 `Map`으로, 채울 때는 바로 앞 형제 위치를 기억해서 줄였다. 바꾼 뒤 1000개: 하나 변경 1.3ms, 전부 섞기 4.3ms (diff만, patch 제외). 실제 라이브러리: Vue 3은 LIS, React는 앞에서부터 맞추는 간단한 방식
+- **patch가 노드 찾기**: 변경 하나를 적용할 때마다 루트에서 path를 따라 내려가 찾는다 (`childNodes[0].childNodes[2]`). path가 "앞 변경이 적용된 뒤의 위치"(변경 적용 순서)라서 바로 맞는다. 미리 다 찾아 두면 앞의 REMOVE·MOVE가 번호를 바꿔 엉뚱한 노드를 고치고, 노드 참조를 VDOM에 저장하면 VDOM 모양(6-2)과 diff까지 바뀐다. 대가: 변경마다 O(깊이). 성능 영향: 상수 (앱 트리는 얕다)
+- **patch 반환값**: 변경을 다 적용한 뒤의 루트를 돌려준다 (`patches.reduce(applyPatch, rootNode)`). 루트가 REPLACE(`path: []`)로 바뀌면 원래 `rootNode`는 화면에서 빠진 노드가 되는데, 다음 변경도 부르는 쪽(`render`)도 새 루트를 이어받을 수 있다. 돌려주지 않으면 "루트 교체 뒤엔 아무도 옛 루트를 안 쓴다"는 적히지 않은 약속에 기대게 된다. 대가: 반환값 하나. phase1은 루트를 매번 다시 읽어서 무시해도 된다. 성능 영향: 없음
+- **patch의 `value`**: attribute와 property를 둘 다 고친다 (`setAttribute('value', v)` + `el.value = v`, 사라지면 `removeAttribute` + `el.value = ''`). 사용자가 한 번 치면 attribute를 바꿔도 화면 칸이 안 따라와서, `setText('')`를 해도 입력창이 안 비워진다(R1). property만 고치면 화면은 맞지만 HTML에 옛 value가 남아 "처음부터 그린 것과 같다"(2-2 patch 보장)가 HTML 비교에서 깨진다. 대가: value 갈래만 두 줄. `checked` 같은 다른 property는 명세에 없어서 안 넣는다. 실제 React는 property만 고친다. 성능 영향: 상수
