@@ -15,6 +15,7 @@
 import { domToVdom, vdomToDom } from '../../src/vdom.js';
 import { diff } from '../../src/diff.js';
 import { patch } from '../../src/patch.js';
+import { renderVdomTree } from './vdom-view.js';
 
 const $ = (id) => document.getElementById(id);
 const realArea = $('real-area');
@@ -188,58 +189,6 @@ function showHistory() {
 
 function showHistoryVdom() {
   renderVdomTree(historyVdom, history[historySelect.selectedIndex]);
-}
-
-function renderVdomTree(output, vnode, changes = new Map()) {
-  if (!vnode) {
-    output.textContent = '바깥 태그 하나로 감싸면 VDOM을 볼 수 있어요.';
-    return;
-  }
-
-  const tree = document.createDocumentFragment();
-
-  function append(text, highlight = false) {
-    if (highlight) {
-      const mark = document.createElement('mark');
-      mark.textContent = text;
-      tree.append(mark);
-    } else {
-      tree.append(text);
-    }
-  }
-
-  function visit(node, path) {
-    const types = (changes.get(path.join('.')) ?? []).map((change) => change.type);
-    const propsChange = changes.get(path.join('.'))?.find((change) => change.type === 'PROPS');
-    // 노드 자체가 지워지거나 바뀌거나 옮겨지면 태그를 강조. PROPS는 속성만, CREATE는 "이 안에 추가"라 태그는 그대로
-    const nodeChanged = types.some((type) => type === 'REMOVE' || type === 'REPLACE' || type === 'MOVE');
-    const indent = '  '.repeat(path.length);
-    append(indent);
-
-    // 글자·주석은 { type: '#text' | '#comment', props: { nodeValue } } 모양 (6-2). 글자 변경은 PROPS로 온다
-    if (node.type === '#text') {
-      append(JSON.stringify(node.props.nodeValue), types.length > 0);
-    } else if (node.type === '#comment') {
-      append(`<!--${node.props.nodeValue}-->`, types.length > 0);
-    } else {
-      append(`<${node.type}`, nodeChanged);
-      for (const [name, value] of Object.entries(node.props)) {
-        append(` ${name}=${JSON.stringify(value)}`, Boolean(propsChange && Object.hasOwn(propsChange.props, name)));
-      }
-      append('>');
-    }
-
-    if (types.length > 0) append(` [${types.join(', ')}]`, true);
-    append('\n');
-
-    if (node.type !== '#text' && node.type !== '#comment') {
-      node.children.forEach((child, index) => visit(child, [...path, index]));
-      append(`${indent}</${node.type}>\n`);
-    }
-  }
-
-  visit(vnode, []);
-  output.replaceChildren(tree);
 }
 
 // ── 실제 영역에 반영 + 바뀐 노드 수 세기 ─────────────────

@@ -6,7 +6,7 @@ import { currentRender, CHILD } from './component.js';
  *   setCount(count + 1)      // 새 값
  *   setCount((c) => c + 1)   // 이전 값으로 계산. 한 번에 여러 번 불러도 앞 결과를 이어 받는다
  *
- * 칸 모양: { value }
+ * 칸 모양: { kind, value }   (kind는 nextSlot이 순서 검사용으로 넣는다)
  *   1. nextSlot('useState')로 이번 칸을 받는다
  *   2. 처음이면(칸이 비었으면) { value: initialValue }로 채운다
  *   3. setState를 만든다
@@ -37,7 +37,7 @@ export function useState(initialValue) {
  *   useEffect(() => { document.title = `${count}번`; }, [count]);
  *   useEffect(() => { const id = setInterval(tick, 1000); return () => clearInterval(id); }, []);
  *
- * 칸 모양: { deps, cleanup }
+ * 칸 모양: { kind, deps, cleanup }
  *   1. nextSlot('useEffect')로 이번 칸을 받는다
  *   2. depsChanged(칸.deps, deps)가 false면 끝 (실행 안 함)
  *   3. 칸.deps = deps
@@ -61,7 +61,7 @@ export function useEffect(effect, deps) {
  * deps가 그대로면 지난번 계산 결과를 다시 쓴다 (R7)
  *   const doneCount = useMemo(() => todos.filter((t) => t.done).length, [todos]);
  *
- * 칸 모양: { deps, value }
+ * 칸 모양: { kind, deps, value }
  *   1. nextSlot('useMemo')로 이번 칸을 받는다
  *   2. depsChanged(칸.deps, deps)면 칸.value = factory(), 칸.deps = deps
  *      (useEffect와 달리 렌더 중에 바로 계산한다. 결과가 이번 VDOM에 들어가야 하니까)
@@ -87,8 +87,13 @@ export function useMemo(factory, deps) {
  *   2. CHILD면 에러: 자식 컴포넌트는 props만 받는 순수 함수다 (requirements 제약, 명세 4번 질문 1 B)
  *      에러 메시지에 name('useState' 등)을 넣어서 어느 hook인지 보이게 한다
  *   3. index = currentRender.hookIndex++
- *   4. owner.hooks[index]가 비었으면 {}로 만든다
+ *   4. owner.hooks[index]가 비었으면 { kind: name }으로 만든다
+ *      이미 있는데 kind가 다르면 에러: 지난 렌더와 hook 순서가 달라졌다 (if·for 안에서 hook을 불렀다)
+ *      종류가 같은 hook끼리 밀리는 경우는 여기서 못 잡는다 → component.js renderVnode가 개수로 잡는다
  *   5. { owner, slot: owner.hooks[index] }를 돌려준다
+ *
+ * 순서·개수 검사는 개발용으로 나누지 않고 항상 한다. 빌드 도구가 없어 배포본에서 지워지지도 않고,
+ * 비용은 문자열 비교 한 번이라 diff·patch에 비하면 0에 가깝다
  */
 function nextSlot(name) {
   const { owner } = currentRender;
@@ -99,8 +104,11 @@ function nextSlot(name) {
     throw new Error(`${name}는 루트 컴포넌트에서만 부를 수 있습니다. 자식은 props만 받습니다`);
   }
   const index = currentRender.hookIndex++;
-  if (owner.hooks[index] === undefined) {
-    owner.hooks[index] = {};
+  const slot = owner.hooks[index];
+  if (slot === undefined) {
+    owner.hooks[index] = { kind: name };
+  } else if (slot.kind !== name) {
+    throw new Error(`hooks[${index}]는 지난 렌더에서 ${slot.kind}였는데 이번엔 ${name}입니다. if·for 안이나 return 뒤에서 hook을 부르지 마세요`);
   }
   return { owner, slot: owner.hooks[index] };
 }
@@ -120,7 +128,7 @@ function nextSlot(name) {
  * 대신 setState 직후엔 화면이 아직 안 바뀌어 있다. 테스트는 await Promise.resolve() 한 번 뒤에 본다
  */
 function scheduleUpdate(owner) {
-  if (owner.updateScheduled) return;
+  if (owner.unmounted || owner.updateScheduled) return;   // 떼어진 컴포넌트는 다시 그리지 않는다
   owner.updateScheduled = true;
   queueMicrotask(() => {
     owner.updateScheduled = false;
