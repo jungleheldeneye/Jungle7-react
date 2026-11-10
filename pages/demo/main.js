@@ -27,15 +27,15 @@ function log(message, kind = '') {
 // ── 자식 컴포넌트: props만 받는 순수 함수 ──────────────────
 function TodoItem({ todo, onToggle, onRemove }) {
   return h('li', { class: todo.done ? 'done' : '' },
-    h('input', { type: 'checkbox', checked: todo.done, onChange: () => onToggle(todo.id) }),
+    h('input', { type: 'checkbox', checked: todo.done, onchange: () => onToggle(todo.id) }),
     h('span', null, todo.text),
-    h('button', { type: 'button', class: 'small', onClick: () => onRemove(todo.id) }, '삭제'),
+    h('button', { type: 'button', class: 'small', onclick: () => onRemove(todo.id) }, '삭제'),
   );
 }
 
 function FilterBar({ filter, onChange }) {
   const option = (value, label) =>
-    h('button', { type: 'button', class: filter === value ? 'active' : '', onClick: () => onChange(value) }, label);
+    h('button', { type: 'button', class: filter === value ? 'active' : '', onclick: () => onChange(value) }, label);
   return h('div', { class: 'row' },
     option('all', '전체'), option('active', '할 일'), option('done', '완료'),
   );
@@ -51,7 +51,7 @@ function StatBox({ label, value }) {
 
 // R5: 형제 컴포넌트 두 개가 루트의 state 하나를 같이 씀
 function NameInput({ name, onChange }) {
-  return h('input', { type: 'text', value: name, placeholder: '이름 입력', onInput: (e) => onChange(e.target.value) });
+  return h('input', { type: 'text', value: name, placeholder: '이름 입력', oninput: (e) => onChange(e.target.value) });
 }
 function Greeting({ name }) {
   return h('p', { class: 'big' }, name === '' ? '이름을 입력해 보세요' : `안녕하세요, ${name}님`);
@@ -155,8 +155,8 @@ function App() {
       title: 'R1. 데이터만 바꾸면 화면이 따라온다',
       check: '추가·체크·삭제·필터를 해 보세요. 목록, 아래 개수 문장, 탭 제목이 같이 바뀌면 성공입니다. 코드는 setTodos로 데이터만 바꾸고 DOM은 건드리지 않습니다.',
     }, [
-      h('form', { class: 'row', onSubmit: addTodo },
-        h('input', { type: 'text', value: text, placeholder: '할 일 입력 후 Enter', onInput: (e) => setText(e.target.value) }),
+      h('form', { class: 'row', onsubmit: addTodo },
+        h('input', { type: 'text', value: text, placeholder: '할 일 입력 후 Enter', oninput: (e) => setText(e.target.value) }),
         h('button', { type: 'submit', class: 'primary' }, '추가'),
       ),
       h(FilterBar, { filter, onChange: setFilter }),
@@ -179,7 +179,7 @@ function App() {
     }, [
       h('p', { class: 'big' }, count),
       h('div', { class: 'row' },
-        h('button', { type: 'button', onClick: () => setCount((c) => c + 1) }, '+1'),
+        h('button', { type: 'button', onclick: () => setCount((c) => c + 1) }, '+1'),
         h('input', { type: 'text', placeholder: '여기 입력해 두고 +1 누르기' }),
       ),
     ]),
@@ -211,18 +211,18 @@ function App() {
     }, [
       h('p', { class: 'big' }, '관련 있는 값: ', h('span', { id: 'r6-value' }, ticks), h('small', null, ` · 관련 없는 값: ${noise}`)),
       h('div', { class: 'row' },
-        h('button', { type: 'button', onClick: () => { log('클릭: 관련 있는 값 +1'); setTicks((t) => t + 1); } }, '관련 있는 값 +1'),
-        h('button', { type: 'button', onClick: () => { log('클릭: 관련 없는 값 +1 → R6 effect 실행 안 돼야 함'); setNoise((n) => n + 1); } }, '관련 없는 값 +1'),
+        h('button', { type: 'button', onclick: () => { log('클릭: 관련 있는 값 +1'); setTicks((t) => t + 1); } }, '관련 있는 값 +1'),
+        h('button', { type: 'button', onclick: () => { log('클릭: 관련 없는 값 +1 → R6 effect 실행 안 돼야 함'); setNoise((n) => n + 1); } }, '관련 없는 값 +1'),
       ),
       h('h3', null, `cleanup 확인: ${seconds}초`),
       h('div', { class: 'row' },
-        h('button', { type: 'button', class: running ? 'active' : '', onClick: () => setRunning((r) => !r) }, running ? '타이머 정지' : '타이머 시작'),
-        h('select', { value: String(speed), onChange: (e) => setSpeed(Number(e.target.value)) },
+        h('button', { type: 'button', class: running ? 'active' : '', onclick: () => setRunning((r) => !r) }, running ? '타이머 정지' : '타이머 시작'),
+        h('select', { value: String(speed), onchange: (e) => setSpeed(Number(e.target.value)) },
           h('option', { value: '1000' }, '1초마다'),
           h('option', { value: '500' }, '0.5초마다'),
           h('option', { value: '200' }, '0.2초마다'),
         ),
-        h('button', { type: 'button', onClick: () => setSeconds(0) }, '0으로'),
+        h('button', { type: 'button', onclick: () => setSeconds(0) }, '0으로'),
       ),
     ]),
 
@@ -240,7 +240,7 @@ function App() {
       h('p', { class: 'big' }, count),
       h('button', {
         type: 'button',
-        onClick: () => {
+        onclick: () => {
           log('클릭: setCount 3번');
           setCount((c) => c + 1); setCount((c) => c + 1); setCount((c) => c + 1);
         },
@@ -251,7 +251,7 @@ function App() {
       title: '참고: R8. key 없음 (범위 밖)',
       check: '"맨 앞 삭제"를 누르면 결과는 맞지만, 오른쪽 DOM 조작에 텍스트 변경이 여러 개 찍힙니다. 뒤 항목을 한 칸씩 고쳐 그리기 때문이고, key를 구현하면 삭제 1개로 줄어듭니다.',
     }, [
-      h('button', { type: 'button', onClick: () => setTodos((prev) => prev.slice(1)) }, '맨 앞 삭제'),
+      h('button', { type: 'button', onclick: () => setTodos((prev) => prev.slice(1)) }, '맨 앞 삭제'),
     ]),
 
     h(PartTitle, null, '구현 규칙 확인 (요구사항 아님)'),
@@ -264,14 +264,14 @@ function App() {
       h('div', { class: 'row' },
         h('button', {
           type: 'button',
-          onClick: () => {
+          onclick: () => {
             log('클릭: 값 방식 setCount(count + 1) 3번');
             setCount(count + 1); setCount(count + 1); setCount(count + 1);
           },
         }, '값 방식 3번'),
         h('button', {
           type: 'button',
-          onClick: () => { log('클릭: 같은 값으로 setCount → 렌더 없어야 함'); setCount((c) => c); },
+          onclick: () => { log('클릭: 같은 값으로 setCount → 렌더 없어야 함'); setCount((c) => c); },
         }, '같은 값 넣기'),
       ),
     ]),
