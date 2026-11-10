@@ -99,6 +99,9 @@ export function vdomToDom(vnode) {
 
 // ─── 여기부터는 위 흐름이 쓰는 작은 도우미들 (쓰이는 순서대로) ───
 
+/** 붙어 있기만 하면 켜지는 속성들. false면 지워야 꺼진다 (disabled="false"도 막힘) */
+const BOOLEAN_ATTRS = new Set(['disabled', 'readonly', 'hidden', 'required']);
+
 /**
  * 속성 하나를 실제 노드에 넣거나 지운다. value가 undefined면 사라진 속성이다 (6-3 사라진 속성)
  *   setProp(<li>, 'class', 'done')  → <li class="done">
@@ -125,7 +128,21 @@ export function setProp(node, name, value) {
       }
       return;
 
+    case 'checked':
+      node.checked = Boolean(value); // 화면에 보이는 체크 상태
+      if (value) 
+        node.setAttribute('checked', ''); // HTML에도 맞춰 두기
+      else 
+        node.removeAttribute('checked'); // false면 속성을 지움
+      return;
+
     default:
+      if (BOOLEAN_ATTRS.has(name)) {
+        // disabled: true → disabled="" / false·undefined → 속성을 지움
+        if (value) node.setAttribute(name, '');
+        else node.removeAttribute(name);
+        return;
+      }
       if (typeof value === 'function') {
         // 이벤트가 생기거나 바뀜: onclick = 새 함수 (6-3 속성 넣기)
         node[name] = value;
