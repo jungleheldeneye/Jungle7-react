@@ -12,8 +12,26 @@ export function h(type, props, ...children) {
     key,
     children: children
       .flat()                              // 배열 자식은 펴서 늘어놓는다 (6-3)
-      .map((child) => (typeof child === 'string' ? textVnode(child) : child)),
+      .map(toChildVnode),
   };
+}
+
+/**
+ * h의 자식 하나를 vnode로 맞춘다. 컴포넌트의 반환값도 같은 규칙을 쓴다 (component.js expand)
+ *   'hi'·0                    → 글자 노드 (숫자 0 → '0')
+ *   null·undefined·true·false → 빈 주석 <!---->
+ *     빼 버리지 않고 자리를 남긴다. cond && h(...)가 켜졌다 꺼질 때 뒤 형제 번호가 밀리면
+ *     diff가 짝을 잘못 지어 뒤의 입력창을 다시 만들고, 친 글자가 사라진다 (R3)
+ *   그 외(vnode)              → 그대로
+ */
+export function toChildVnode(child) {
+  if (child === null || child === undefined || typeof child === 'boolean') {
+    return { type: '#comment', props: { nodeValue: '' }, children: [] };
+  }
+  if (typeof child === 'string' || typeof child === 'number') {
+    return textVnode(String(child));
+  }
+  return child;
 }
 
 /** 글자 노드 VDOM. h와 domToVdom이 같은 모양을 쓰도록 한 곳에 둔다 (6-2) */
