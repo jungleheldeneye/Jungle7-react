@@ -7,6 +7,10 @@
   --accent: #2f6fed;
   --code-bg: #f1f3f6;
   --bad: #d64545;
+  --ok: #1f8a4c;
+  --memo: #8a5cd6;
+  --child: #c26a12;
+  --effect: #c2307a;
   color-scheme: light dark;
 }
 
@@ -20,6 +24,10 @@
     --accent: #6b9bff;
     --code-bg: #242832;
     --bad: #ff7a7a;
+    --ok: #5fd08f;
+    --memo: #b897ff;
+    --child: #f0a65a;
+    --effect: #ff7ab8;
   }
 }
 
@@ -119,3 +127,87 @@ textarea.invalid { border-color: var(--bad); }
 .card .done { color: var(--muted); text-decoration: line-through; }
 .card .count { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 .card input { width: 100%; padding: 6px 8px; font: inherit; }
+
+/* ── 탭 ─────────────────────────────────────────────────── */
+.tabs { display: flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.tabs [role="tab"] { border: 0; background: transparent; color: var(--muted); }
+.tabs [role="tab"][aria-selected="true"] { background: var(--accent); color: #fff; }
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 1200px;
+  margin: 0 auto 16px;
+}
+.intro { margin: 0; color: var(--muted); font-size: 13px; }
+.controls.wrap { flex-wrap: wrap; }
+
+/* ── Phase 2 ────────────────────────────────────────────── */
+h3.sub { font-size: 14px; margin: 16px 0 8px; }
+h3 small, h3.sub small { color: var(--muted); font-weight: 400; margin-left: 6px; font-size: 12px; }
+
+#app .card .add-row { display: flex; gap: 6px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+#app .card .add-row input { flex: 1 1 140px; width: auto; }
+#app .card li { display: flex; align-items: center; gap: 8px; }
+#app .card .todo-text { cursor: pointer; }
+#app .card .todo-remove { padding: 0 8px; line-height: 1.4; }
+#app .card .clicks { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.effect-out { margin: 0; padding-left: 20px; font-size: 13px; color: var(--muted); }
+
+.table-wrap { overflow-x: auto; }
+.hooks-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.hooks-table th, .hooks-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.hooks-table th { color: var(--muted); font-weight: 500; }
+.hooks-table td:nth-child(-n+3) { white-space: nowrap; word-break: normal; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all; }
+.kind { font-weight: 600; }
+.kind-useState { color: var(--accent); }
+.kind-useMemo { color: var(--memo); }
+.kind-useEffect { color: var(--effect); }
+
+.rule-result { margin-top: 8px; color: var(--bad); }
+.rule-result.ok { color: var(--ok); }
+
+.cycle-list { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 8px; }
+.cycle-chip { flex: none; font-size: 12px; padding: 4px 10px; white-space: nowrap; }
+.cycle-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.flow { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 4px; }
+.flow-step {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 10px;
+  border-left: 3px solid var(--phase, var(--line));
+  border-radius: 4px;
+  background: var(--code-bg);
+  font-size: 13px;
+}
+.flow-step .badge {
+  flex: none;
+  min-width: 64px;
+  font: 600 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--phase, var(--muted));
+}
+.flow-step.tone-skip { opacity: .6; }
+.flow-step.tone-batched { font-style: italic; }
+.flow-step.tone-bad { color: var(--bad); }
+.phase-setState { --phase: var(--accent); }
+.phase-schedule { --phase: var(--muted); }
+.phase-render, .phase-hook { --phase: var(--memo); }
+.phase-expand, .phase-child { --phase: var(--child); }
+.phase-diff, .phase-patch { --phase: var(--ok); }
+.phase-effect { --phase: var(--effect); }
+.phase-unmount { --phase: var(--child); }
+.phase-error { --phase: var(--bad); }
+
+.tree-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 8px; }
+.tree-grid h3 { font-size: 13px; margin: 0 0 6px; }
+.tree-grid .log { max-height: 420px; }
+.vdom-details { margin-top: 8px; }
+.component-tag { color: var(--child); font-weight: 600; }
+.key-attr { color: var(--accent); }
