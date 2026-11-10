@@ -22,6 +22,10 @@ npx serve .
 # → http://localhost:3000/pages/phase1/
 ```
 
+## 사용법
+
+`h`, `render`, hooks, `unmount`, hook 규칙과 검증 페이지 보는 법은 [MANUAL.md](MANUAL.md)에 있어요.
+
 ## 작업 규칙
 
 - 각자 `이름/impl` 브랜치에서 작업
