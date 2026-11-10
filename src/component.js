@@ -24,7 +24,7 @@ export const currentRender = { owner: null, hookIndex: 0 };
 export function render(Component, container) {
   const instance = new FunctionComponent(Component);
   instance.mount(container);
-  return instance;   // 테스트에서 hooks·vnode를 들여다보기용
+  return instance;   // instance.unmount()로 뗀다. 테스트에서 hooks·vnode를 들여다볼 때도 쓴다
 }
 
 /**
@@ -46,6 +46,8 @@ export class FunctionComponent {
     this.dom = null;
     this.pendingEffects = [];
     this.updateScheduled = false;   // 다시 그리기가 이미 예약됐나 (hooks.js scheduleUpdate)
+    this.hookCount = undefined;     // 첫 렌더에서 부른 hook 개수. 다음 렌더부터 이 수와 같아야 한다
+    this.unmounted = false;         // unmount()가 불렸나. true면 update·setState를 무시한다
   }
 
   /**
@@ -74,6 +76,7 @@ export class FunctionComponent {
    *   5. effect 실행 (deps가 바뀐 것만, R6)
    */
   update() {
+    if (this.unmounted) return;   // 떼어진 뒤에 예약돼 있던 update가 와도 아무것도 안 한다
     const nextVnode = this.renderVnode();
     const patches = diff(this.vnode, nextVnode);
     this.dom = patch(this.dom, patches);
@@ -86,7 +89,9 @@ export class FunctionComponent {
    *   1. "지금 = 루트"로 표시하고 hook 순번을 0으로 (hooks.js가 이걸 보고 칸을 찾는다)
    *   2. this.component(this.props) 실행
    *   3. 표시를 지운다
-   *   4. expand로 자식 컴포넌트 메모를 펼친다
+   *   4. hook 개수 검사: 첫 렌더와 개수가 다르면 에러 (if 안에서 hook을 불렀다)
+   *      nextSlot의 종류 검사는 useState 3개 중 하나가 빠지는 것처럼 같은 종류끼리 밀리면 못 잡는다
+   *   5. expand로 자식 컴포넌트 메모를 펼친다
    */
   renderVnode() {
     currentRender.owner = this;
@@ -96,6 +101,12 @@ export class FunctionComponent {
       vnode = this.component(this.props);
     } finally {
       currentRender.owner = null;   // 루트 함수가 던져도 표시는 꼭 지운다
+    }
+    const used = currentRender.hookIndex;
+    if (this.hookCount === undefined) {
+      this.hookCount = used;
+    } else if (used !== this.hookCount) {
+      throw new Error(`hook 개수가 바뀌었습니다: 지난 렌더 ${this.hookCount}개, 이번 ${used}개. if·for 안이나 return 뒤에서 hook을 부르지 마세요`);
     }
     return expand(vnode);
   }
@@ -108,6 +119,43 @@ export class FunctionComponent {
     const effects = this.pendingEffects;
     this.pendingEffects = [];
     effects.forEach((run) => run());
+  }
+
+  /**
+   * 화면에서 떼고 effect가 걸어 둔 것을 전부 푼다. 쓰는 쪽이 render가 돌려준 인스턴스로 부른다
+   *   const app = render(App, container);
+   *   app.unmount();
+   *
+   *   1. 이미 떼어졌으면 끝 (두 번 불러도 안전)
+   *   2. unmounted = true. 이후 setState·예약돼 있던 update는 무시된다 (hooks.js scheduleUpdate, update)
+   *   3. 아직 안 돈 effect는 버린다 (화면이 사라지니 실행할 이유가 없다)
+   *   4. 모든 칸의 cleanup을 칸 순서대로 부른다. 안에 뭐가 있는지는 모른다. 부르기만 한다
+   *      하나가 던져도 나머지는 계속 부른다. 그래야 다른 effect의 타이머·리스너가 남지 않는다
+   *   5. 루트 DOM을 container에서 뗀다
+   *   6. 다 끝난 뒤 cleanup에서 난 첫 에러를 다시 던진다 (삼키지 않는다)
+   */
+  unmount() {
+    if (this.unmounted) return;
+    this.unmounted = true;
+    this.pendingEffects = [];
+
+    const errors = [];
+    for (const slot of this.hooks) {
+      if (typeof slot.cleanup !== 'function') continue;
+      const cleanup = slot.cleanup;
+      slot.cleanup = undefined;
+      try {
+        cleanup();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+
+    this.dom?.remove();
+    this.dom = null;
+    this.vnode = null;
+
+    if (errors.length > 0) throw errors[0];
   }
 }
 
