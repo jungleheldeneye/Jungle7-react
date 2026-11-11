@@ -4,8 +4,99 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Phase 1 · VDOM Diff 검증</title>
-  <link rel="stylesheet" href="./style.css">
   <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #1d2129;
+      --muted: #6b7280;
+      --line: #e2e5ea;
+      --accent: #2f6fed;
+      --code-bg: #f1f3f6;
+      --bad: #d64545;
+      color-scheme: light dark;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #15171c;
+        --panel: #1d2027;
+        --text: #e6e8ec;
+        --muted: #9aa1ad;
+        --line: #2c313b;
+        --accent: #6b9bff;
+        --code-bg: #242832;
+        --bad: #ff7a7a;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    }
+
+    .controls { display: flex; align-items: center; gap: 8px; }
+    .pos { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 48px; text-align: center; }
+
+    button {
+      font: inherit;
+      padding: 6px 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      cursor: pointer;
+    }
+    button:disabled { opacity: .4; cursor: default; }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      min-width: 0;
+    }
+
+    .area {
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+    }
+    #test-area:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .source-label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 13px; }
+
+    textarea {
+      width: 100%;
+      min-height: 160px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--code-bg);
+      color: var(--text);
+      font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      resize: vertical;
+    }
+    textarea.invalid { border-color: var(--bad); }
+
+    .summary { margin: 0 0 8px; }
+    .log {
+      margin: 0;
+      max-height: 260px;
+      overflow: auto;
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--code-bg);
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    /* 샘플 HTML 모양 */
+    .card .title { margin: 0 0 8px; font-size: 16px; }
+    .card .todos { margin: 0 0 8px; padding-left: 20px; }
+    .card .done { color: var(--muted); text-decoration: line-through; }
+    .card .count { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+    .card input { width: 100%; padding: 6px 8px; font: inherit; }
+
     .presentation {
       --surface: #f2f5fa;
       --blue-surface: #eef4ff;
@@ -306,6 +397,399 @@
     </section>
   </main>
 
-  <script type="module" src="./main.js"></script>
+  <script type="module">
+    /**
+     * Phase 1 검증 페이지
+     *
+     * 이 파일은 src/의 함수 4개로 편집, 비교, 적용, 이력을 연결한다.
+     *
+     *   domToVdom(node)        실제 DOM 노드 → VDOM
+     *   vdomToDom(vnode)       VDOM → 실제 DOM 노드
+     *   diff(oldVnode, newVnode)  → 변경 목록 (배열)
+     *   patch(rootNode, patches)  변경 목록을 rootNode 기준으로 실제 DOM에 반영
+     *                          (path가 []인 REPLACE는 rootNode 자체를 교체할 수 있음)
+     *
+     * 각 영역(.area) 안에는 루트 요소가 정확히 하나 있다고 가정한다.
+     */
+    import { domToVdom, vdomToDom } from '../../src/vdom.js';
+    import { diff } from '../../src/diff.js';
+    import { patch } from '../../src/patch.js';
+
+    const $ = (id) => document.getElementById(id);
+    const realArea = $('real-area');
+    const testArea = $('test-area');
+    const testSource = $('test-source');
+    const btnPatch = $('btn-patch');
+    const btnBack = $('btn-back');
+    const btnForward = $('btn-forward');
+    const posLabel = $('history-pos');
+    const pendingSummary = $('pending-summary');
+    const pendingChanges = $('pending-changes');
+    const pendingLog = $('pending-log');
+    const vdomDetails = $('vdom-details');
+    const currentVdom = $('current-vdom');
+    const draftVdom = $('draft-vdom');
+    const summary = $('summary');
+    const patchLog = $('patch-log');
+    const appliedDetails = $('applied-vdom-details');
+    const appliedEmpty = $('applied-vdom-empty');
+    const appliedTrees = $('applied-vdom-trees');
+    const appliedBefore = $('applied-before');
+    const appliedAfter = $('applied-after');
+    const historyDetails = $('history-details');
+    const historySelect = $('history-select');
+    const historyVdom = $('history-vdom');
+
+    // ── State History ─────────────────────────────────────────
+    // history[index]가 지금 실제 영역에 그려져 있는 VDOM
+    let history = [];
+    let index = 0;
+    let pending = null;
+    let pendingError = '';
+    let lastApplied = null;
+    let previousTestItems = new WeakSet();
+
+    // ── 영역 헬퍼 ─────────────────────────────────────────────
+    const rootOf = (area) => area.firstElementChild;
+
+    function singleRootOf(container) {
+      if (container.children.length !== 1) return null;
+      const hasOutsideText = Array.from(container.childNodes).some((node) =>
+        node.nodeType === Node.TEXT_NODE && node.data.trim() !== '',
+      );
+      return hasOutsideText ? null : rootOf(container);
+    }
+
+    function assignListKeys(root) {
+      for (const item of root.querySelectorAll('li:not([data-key])')) {
+        item.dataset.key = globalThis.crypto.randomUUID();
+      }
+    }
+
+    /** 테스트 영역을 vnode로 통째로 다시 그림 (테스트 영역은 사용자가 고치는 곳이라 diff 대상이 아님) */
+    function renderTestArea(vnode) {
+      testArea.replaceChildren(vdomToDom(vnode));
+      syncSourceFromTest();
+    }
+
+    function syncSourceFromTest() {
+      const root = singleRootOf(testArea);
+      if (root) assignListKeys(root);
+      testSource.value = testArea.innerHTML;
+      updatePending(root);
+    }
+
+    function syncTestFromSource() {
+      const tpl = document.createElement('template');
+      tpl.innerHTML = testSource.value.trim();
+      const root = singleRootOf(tpl.content);
+      if (root) {
+        // 입력 중인 HTML의 커서를 유지하기 위해 키는 테스트 영역에만 넣는다.
+        assignListKeys(root);
+        testArea.replaceChildren(root);
+      }
+      updatePending(root);
+    }
+
+    function onTestInput() {
+      // 브라우저가 줄을 나누거나 복사할 때 원래 항목의 키까지 복제할 수 있다.
+      for (const item of testArea.querySelectorAll('li[data-key]')) {
+        if (previousTestItems.has(item)) continue;
+        const hasMatchingSibling = Array.from(item.parentElement.children).some((sibling) =>
+          sibling !== item && sibling.getAttribute('data-key') === item.dataset.key,
+        );
+        if (hasMatchingSibling) item.removeAttribute('data-key');
+      }
+      syncSourceFromTest();
+    }
+
+    function updatePending(root) {
+      previousTestItems = new WeakSet(testArea.querySelectorAll('li'));
+      pending = null;
+      pendingError = '';
+      if (root) {
+        const vnode = domToVdom(root);
+        try {
+          pending = { vnode, patches: diff(history[index], vnode) };
+        } catch (error) {
+          pendingError = error.message;
+        }
+      }
+      showPending();
+    }
+
+    function showPending() {
+      testSource.classList.toggle('invalid', pending === null);
+      testSource.setAttribute('aria-invalid', String(pending === null));
+      const count = pending?.patches.length ?? 0;
+      btnPatch.disabled = count === 0;
+      pendingLog.textContent = count > 0 ? JSON.stringify(pending.patches, null, 2) : '';
+      renderPendingChanges(history[index], pending?.patches ?? []);
+
+      if (!pending) {
+        pendingSummary.textContent = pendingError || '테스트 영역의 내용을 바깥 태그 하나로 감싸세요.';
+      } else if (count === 0) {
+        pendingSummary.textContent = '적용할 변경이 없어요. 테스트 영역을 편집해 보세요.';
+      } else {
+        pendingSummary.textContent = `변경 ${count}개가 준비됐어요. Patch를 누르면 실제 영역에 반영돼요.`;
+      }
+
+      showVdomTrees();
+    }
+
+    function renderPendingChanges(previous, patches) {
+      const items = patches.map((change) => {
+        const { type, path } = change;
+        const before = type === 'CREATE'
+          ? undefined
+          : path.reduce((node, child) => node.children[child], previous);
+        const item = document.createElement('li');
+        item.className = 'diff-change';
+        const heading = document.createElement('h3');
+        heading.textContent = `${type} · ${JSON.stringify(path)}`;
+        item.append(heading);
+
+        if (type === 'PROPS') {
+          for (const [name, value] of Object.entries(change.props)) {
+            const oldValue = JSON.stringify(before.props[name]);
+            const newValue = JSON.stringify(value);
+            item.append(renderChangedValue(oldValue, newValue, name));
+          }
+        } else {
+          item.append(renderChangedValue(describeNode(before), describeNode(change.vnode)));
+        }
+        return item;
+      });
+      pendingChanges.replaceChildren(...items);
+    }
+
+    function describeNode(node) {
+      if (node === undefined) return undefined;
+      const value = textValue(node);
+      if (value !== undefined) return JSON.stringify(value);
+      if (node.type === '#comment') return `<!--${node.props.nodeValue}-->`;
+      const text = node.children.map(textValue).filter((child) => child?.trim()).join(' ');
+      return text ? `<${node.type}> ${JSON.stringify(text)}` : `<${node.type}>`;
+    }
+
+    function textValue(node) {
+      if (node.type === '#text') return node.props.nodeValue;
+    }
+
+    function renderChangedValue(before, after, name) {
+      const row = document.createElement('p');
+      const highlight = document.createElement('mark');
+      if (name) row.append(`${name} `);
+      if (after !== undefined) {
+        if (before !== undefined) row.append(`${before} → `);
+        highlight.textContent = after;
+      } else {
+        highlight.textContent = before;
+      }
+      row.append(highlight);
+      return row;
+    }
+
+    function showVdomTrees() {
+      if (!vdomDetails.open) return;
+
+      renderComparison(currentVdom, draftVdom, history[index], pending?.vnode, pending?.patches);
+    }
+
+    function showAppliedTrees() {
+      if (!appliedDetails.open) return;
+      appliedEmpty.hidden = lastApplied !== null;
+      appliedTrees.hidden = lastApplied === null;
+      if (lastApplied) {
+        const { before, after, patches } = lastApplied;
+        renderComparison(appliedBefore, appliedAfter, before, after, patches);
+      }
+    }
+
+    function renderComparison(beforeOutput, afterOutput, before, after, patches = []) {
+      const beforeChanges = new Map();
+      for (const change of patches) {
+        // src/diff.js의 경로는 적용 전 트리를 가리킨다.
+        addChange(beforeChanges, change.path, change);
+      }
+      renderVdomTree(beforeOutput, before, beforeChanges);
+      renderVdomTree(afterOutput, after);
+    }
+
+    function addChange(changes, path, change) {
+      const index = path.join('.');
+      const entries = changes.get(index) ?? [];
+      entries.push(change);
+      changes.set(index, entries);
+    }
+
+    function showHistory() {
+      if (!historyDetails.open) return;
+      historySelect.replaceChildren(...history.map((_, position) => {
+        const option = document.createElement('option');
+        option.value = position;
+        option.textContent = position === index ? `${position + 1}번 (현재)` : `${position + 1}번`;
+        return option;
+      }));
+      historySelect.selectedIndex = index;
+      showHistoryVdom();
+    }
+
+    function showHistoryVdom() {
+      renderVdomTree(historyVdom, history[historySelect.selectedIndex]);
+    }
+
+    function renderVdomTree(output, vnode, changes = new Map()) {
+      if (!vnode) {
+        output.textContent = '바깥 태그 하나로 감싸면 VDOM을 볼 수 있어요.';
+        return;
+      }
+
+      const tree = document.createDocumentFragment();
+
+      function append(text, highlight = false) {
+        if (highlight) {
+          const mark = document.createElement('mark');
+          mark.textContent = text;
+          tree.append(mark);
+        } else {
+          tree.append(text);
+        }
+      }
+
+      function visit(node, path) {
+        const entries = changes.get(path.join('.')) ?? [];
+        const propChange = entries.find(({ type }) => type === 'PROPS');
+        const indent = '  '.repeat(path.length);
+        append(indent);
+
+        const text = textValue(node);
+        const isComment = node.type === '#comment';
+        if (text !== undefined) {
+          append(JSON.stringify(text), entries.length > 0);
+        } else if (isComment) {
+          append(`<!--${node.props.nodeValue}-->`, entries.length > 0);
+        } else {
+          const tagChanged = entries.some(({ type }) => type !== 'PROPS' && type !== 'CREATE');
+          append(`<${node.type}`, tagChanged);
+          for (const [name, value] of Object.entries(node.props)) {
+            const changed = propChange && Object.hasOwn(propChange.props, name);
+            append(` ${name}=${JSON.stringify(value)}`, changed);
+          }
+          append('>');
+        }
+
+        if (entries.length) append(` [${entries.map(({ type }) => type).join(', ')}]`, true);
+        append('\n');
+
+        if (text === undefined && !isComment) {
+          node.children.forEach((child, index) => visit(child, [...path, index]));
+          append(`${indent}</${node.type}>\n`);
+        }
+      }
+
+      visit(vnode, []);
+      output.replaceChildren(tree);
+    }
+
+    // ── 실제 영역에 반영 + 바뀐 노드 수 세기 ─────────────────
+    /**
+     * 변경 목록을 실제 영역에 반영한다.
+     * MutationObserver로 실제로 몇 개의 노드가 바뀌었는지 센다.
+     * (화면이 맞아도 통째로 교체됐다면 여기서 드러남)
+     */
+    function applyToReal(patches, next) {
+      const records = [];
+      const observer = new MutationObserver((list) => records.push(...list));
+      observer.observe(realArea, {
+        childList: true, attributes: true, characterData: true, subtree: true,
+      });
+
+      patch(rootOf(realArea), patches);
+
+      records.push(...observer.takeRecords());
+      observer.disconnect();
+      report(patches, records);
+      lastApplied = { before: history[index], after: next, patches };
+      showAppliedTrees();
+    }
+
+    function report(patches, records) {
+      const count = (type) => records.filter((r) => r.type === type).length;
+      const added = records.reduce((n, r) => n + r.addedNodes.length, 0);
+      const removed = records.reduce((n, r) => n + r.removedNodes.length, 0);
+      const moved = patches.filter(({ type }) => type === 'MOVE').length;
+      const moveInfo = moved > 0 ? ` (이동 ${moved}건 포함)` : '';
+
+      summary.textContent = patches.length === 0
+        ? '변경 없음 — 실제 DOM을 건드리지 않았어요.'
+        : `변경 ${patches.length}개 → DOM 기록: 추가 ${added} · 삭제 ${removed} · 속성 ${count('attributes')} · 텍스트 ${count('characterData')}${moveInfo}`;
+      patchLog.textContent = JSON.stringify(patches, null, 2);
+    }
+
+    // ── 버튼 상태 ─────────────────────────────────────────────
+    function updateControls() {
+      btnBack.disabled = index === 0;
+      btnForward.disabled = index === history.length - 1;
+      posLabel.textContent = `${index + 1} / ${history.length}`;
+      showHistory();
+    }
+
+    // ── 동작 ──────────────────────────────────────────────────
+    function onLoad() {
+      const root = rootOf(realArea);
+      assignListKeys(root);
+      const vdom0 = domToVdom(root);
+      history = [vdom0];
+      index = 0;
+      renderTestArea(vdom0);
+      updateControls();
+    }
+
+    function onPatch() {
+      if (!pending?.patches.length) return;
+      // 테스트 영역에 먼저 발급한 키를 HTML 편집기에도 기록한다.
+      testSource.value = testArea.innerHTML;
+      const { vnode, patches } = pending;
+      applyToReal(patches, vnode);
+
+      // 뒤로 이동한 상태에서 새 변경을 적용하면 그 뒤 기록을 버린다.
+      history = history.slice(0, index + 1);
+      history.push(vnode);
+      index += 1;
+      pending = { vnode, patches: [] };
+      showPending();
+      updateControls();
+    }
+
+    function go(step) {
+      const target = index + step;
+      if (target < 0 || target >= history.length) return;
+      // 실제 영역: 지금 VDOM → 목표 VDOM 차이만 반영
+      const next = history[target];
+      applyToReal(diff(history[index], next), next);
+      // 테스트 영역: 목표 VDOM으로 다시 그림
+      index = target;
+      renderTestArea(history[index]);
+      updateControls();
+    }
+
+    btnPatch.addEventListener('click', onPatch);
+    btnBack.addEventListener('click', () => go(-1));
+    btnForward.addEventListener('click', () => go(1));
+    testArea.addEventListener('input', onTestInput);
+    testSource.addEventListener('input', syncTestFromSource);
+    vdomDetails.addEventListener('toggle', showVdomTrees);
+    appliedDetails.addEventListener('toggle', showAppliedTrees);
+    historyDetails.addEventListener('toggle', showHistory);
+    historySelect.addEventListener('change', showHistoryVdom);
+
+    try {
+      onLoad();
+    } catch (err) {
+      summary.textContent = `src/ 함수를 불러오는 중 오류: ${err.message}`;
+      console.error(err);
+    }
+  </script>
 </body>
 </html>
