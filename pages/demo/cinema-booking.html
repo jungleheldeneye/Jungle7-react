@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>밤의 극장 · 좌석 예매</title>
+  <title>정글 극장 · 좌석 예매</title>
   <style>
     :root {
       color-scheme: dark;
@@ -102,29 +102,51 @@
     .action--primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
     .action:disabled { border-color: var(--line); background: #272936; color: var(--muted); }
     .inspector {
-      padding: 10px 12px;
-      background: #000;
-      color: #fff;
-      font: .8125rem/1.55 ui-monospace, monospace;
+      display: grid;
+      gap: 16px;
+      word-break: keep-all;
+      overflow-wrap: anywhere;
       font-variant-numeric: tabular-nums;
     }
-    .inspector dl, .inspector dd { margin: 0; }
-    .inspector-row {
-      display: grid;
-      grid-template-columns: 5.25rem minmax(0, 1fr);
-      gap: 8px;
-      padding: 3px 4px;
-      overflow-wrap: anywhere;
+    .inspector-action { display: grid; gap: 10px; }
+    .inspector-event { font-size: 1.125rem; font-weight: 700; }
+    .inspector-event code { margin-inline-start: 8px; color: var(--muted); font-size: .8125rem; }
+    .inspector-flow { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .inspector-flow li {
+      padding: 8px 12px;
+      border-inline-start: 2px solid var(--line);
+      background: var(--background);
     }
-    .inspector-vdom { margin-block-start: 8px; padding-block-start: 8px; border-block-start: 1px solid var(--line); }
-    .inspector-vdom summary { cursor: pointer; }
+    .inspector-flow code, .inspector-metric code { color: var(--muted); font-size: .8125rem; }
+    .inspector-flow .state-change { border-inline-start-color: var(--accent); }
+    .inspector-flow strong { color: var(--accent); }
+    .inspector-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .inspector-metric {
+      min-width: 0;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--background);
+    }
+    .inspector-metric.changed { border-color: var(--accent); }
+    .inspector-value { font-weight: 700; }
+    .inspector-metric.changed .inspector-value { color: var(--accent); }
+    .inspector-vdom {
+      padding-block-start: 10px;
+      border-block-start: 1px solid var(--line);
+    }
+    .inspector-vdom summary { cursor: pointer; font-size: .875rem; }
     .inspector-vdom pre {
       max-height: min(45dvh, 24rem);
       overflow: auto;
       margin: 8px 0 0;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
-      font: inherit;
+      font: .8125rem/1.55 ui-monospace, monospace;
     }
     @media (max-width: 52rem) {
       .workspace { grid-template-columns: minmax(0, 1fr); }
@@ -145,7 +167,8 @@
     import { h } from '../../src/vdom.js';
     import { useEffect, useMemo, useState } from '../../src/hooks.js';
 
-    const HOLD_SECONDS = 120;
+    const HOLD_SECONDS = 20;
+    const TIMER_SOURCE = '타이머 갱신';
     const NUMBER = new Intl.NumberFormat('ko-KR');
     const STANDARD = { label: '일반석', price: 10000 };
     const PREMIUM = { label: '프리미엄석', price: 14000 };
@@ -223,7 +246,7 @@
         h('div', { class: 'panel-heading' },
           h('h2', { id: 'summary-heading' }, receipt ? '예매 완료' : '예매 요약'),
           h('p', { class: 'hold small', role: receipt ? undefined : 'timer' },
-            receipt ? '2관 · 19:30' : seconds > 0 ? `남은 시간 ${formatTime(seconds)}` : '선택 시 2분간 유지',
+            receipt ? '2관 · 19:30' : seconds > 0 ? `남은 시간 ${formatTime(seconds)}` : `선택 시 ${HOLD_SECONDS}초간 유지`,
           ),
         ),
         h('div', { class: 'summary-body' }, seats.length > 0
@@ -302,7 +325,7 @@
       useEffect(() => {
         if (deadline === null) return;
         const timer = setInterval(() => {
-          setBookingFrom(setBooking, '타이머 갱신', (current) => {
+          setBookingFrom(setBooking, TIMER_SOURCE, (current) => {
             if (current.deadline !== deadline) return current;
             const nextSeconds = remainingTime(deadline);
             if (nextSeconds === 0) return clearSelection(current, true);
@@ -328,12 +351,10 @@
       );
     }
 
-    const INSPECTOR_LABELS = ['setState', 'useState', 'useMemo', 'VDOM', 'useEffect'];
-
     let setInspection;
 
     function ReactInspector() {
-      const [{ rows, vnode }, setSnapshot] = useState({ rows: [], vnode: null });
+      const [snapshot, setSnapshot] = useState(null);
       const [expanded, setExpanded] = useState(false);
       const onToggle = useMemo(() => (event) => setExpanded(event.currentTarget.open), []);
       useEffect(() => {
@@ -341,15 +362,17 @@
         return () => { setInspection = undefined; };
       }, []);
 
-      return h('aside', { class: 'inspector', 'aria-label': '미니 React 실시간 상태' },
-        h('dl', {}, rows.map((value, index) =>
-          h('div', { class: 'inspector-row' },
-            h('dt', { translate: 'no' }, `${INSPECTOR_LABELS[index]}:`),
-            h('dd', {}, value),
-          ),
-        )),
+      const { action, timer, price, vnode, patchCount } = snapshot ?? {};
+      return h('aside', { class: 'panel inspector', 'aria-labelledby': 'inspector-heading' },
+        h('h2', { id: 'inspector-heading' }, '화면이 바뀌는 과정'),
+        action ? h(BookingAction, { action }) : h('p', { class: 'muted' }, '좌석을 골라 화면이 바뀌는 과정을 확인해 보세요.'),
+        snapshot ? h('div', { class: 'inspector-metrics' },
+          h(InspectorMetric, { label: '남은 시간', hook: 'useEffect', ...timer }),
+          h(InspectorMetric, { label: '선택 좌석 합계', hook: 'useMemo', ...price }),
+        ) : null,
         h('details', { class: 'inspector-vdom', ontoggle: onToggle },
-          h('summary', {}, '현재 VDOM 보기'),
+          h('summary', {}, '현재 VDOM 보기', patchCount === null || patchCount === undefined
+            ? null : h('span', { class: 'muted' }, ` · 최근 Diff ${patchCount}건`)),
           expanded && vnode ? h('pre', { tabindex: '0', 'aria-label': '현재 예매 화면의 VDOM' },
             JSON.stringify(vnode, (_, value) => typeof value === 'function' ? '[함수]' : value, 2),
           ) : null,
@@ -357,41 +380,90 @@
       );
     }
 
-    function countVdomNodes(node) {
-      if (typeof node === 'string') return 1;
-      return 1 + node.children.reduce((count, child) => count + countVdomNodes(child), 0);
+    function BookingAction({ action }) {
+      const { source, before, after, seatChange, summaryChange, patchCount } = action;
+      return h('section', { class: 'inspector-action', 'aria-label': '마지막 예매 동작' },
+        h('p', { class: 'inspector-event' }, source, h('code', {}, 'setBooking()')),
+        h('ol', { class: 'inspector-flow' },
+          h('li', { class: 'state-change' },
+            h('code', {}, 'useState'), h('p', {}, '선택 좌석 ', h('span', { class: 'muted' }, `${before} → `), h('strong', {}, after))),
+          h('li', {},
+            h('p', {}, h('code', {}, 'SeatMap'), ' · ', seatChange),
+            h('p', {}, h('code', {}, 'BookingSummary'), ' · ', summaryChange)),
+          h('li', {}, h('p', {}, `새 VDOM → Diff ${patchCount}건 → DOM 반영`)),
+        ),
+      );
+    }
+
+    function InspectorMetric({ label, hook, before, value, status }) {
+      return h('section', { class: before === null ? 'inspector-metric' : 'inspector-metric changed', 'aria-label': label },
+        h('p', { class: 'small muted' }, label),
+        h('p', {},
+          before === null ? null : h('span', { class: 'small muted' }, `${before} → `),
+          h('span', { class: 'inspector-value' }, value)),
+        h('p', { class: 'small' }, h('code', {}, hook), ' · ', status),
+      );
     }
 
     function timerEffectStatus(deadline, previousDeadline) {
-      if (previousDeadline === undefined) return '첫 실행 · 타이머 대기';
-      if (deadline === previousDeadline) return deadline === null ? '타이머 대기' : '타이머 유지';
       if (deadline === null) return '타이머 정리';
       return previousDeadline === null ? '타이머 시작' : '타이머 재시작';
     }
 
+    function describeBookingAction(previous, booking, memo, patchCount) {
+      const { selectedIds, bookedIds, receipt, source } = booking;
+      const added = selectedIds.filter((id) => !previous.booking.selectedIds.includes(id));
+      const removed = previous.booking.selectedIds.filter((id) => !selectedIds.includes(id));
+      const booked = bookedIds.filter((id) => !previous.booking.bookedIds.includes(id));
+      const seatChanges = [
+        booked.length && `${booked.join(', ')} 예매 완료`,
+        added.length && `${added.join(', ')} 선택`,
+        !booked.length && removed.length && `${removed.join(', ')} 선택 해제`,
+      ].filter(Boolean);
+      const summary = receipt ?? memo;
+      const oldTotal = (previous.booking.receipt ?? previous.memo).total;
+      const total = oldTotal === summary.total
+        ? formatPrice(summary.total) : `${formatPrice(oldTotal)} → ${formatPrice(summary.total)}`;
+      return {
+        source,
+        before: previous.booking.selectedIds.join(', ') || '없음',
+        after: selectedIds.join(', ') || '없음',
+        seatChange: seatChanges.join(' · ') || '좌석 변경 없음',
+        summaryChange: `${receipt ? '예매 완료 · ' : ''}${summary.seats.length}석 · ${total}`,
+        patchCount,
+      };
+    }
+
     const bookingApp = new FunctionComponent(BookingApp);
-    let previousVdom;
-    let previousMemo;
-    let previousDeadline;
-    let renderNumber = 0;
+    let previous;
+    let lastAction = null;
+    let timerStatus = '타이머 대기';
 
     function publishInspection(booking, memo) {
-      const { selectedIds, bookedIds, deadline, seconds, expired, source } = booking;
+      const { deadline, seconds, expired, source } = booking;
       const { vnode } = bookingApp;
-      const hold = deadline === null ? (expired ? '시간 만료' : '대기') : formatTime(seconds);
-      const change = previousVdom === undefined ? '초기 생성' : `Diff ${diff(previousVdom, vnode).length}건`;
-      renderNumber++;
-      const rows = [
-        source ? `${expired && source === '타이머 갱신' ? '시간 만료' : source} · 반영 #${renderNumber}` : '초기 상태 · 호출 없음',
-        `선택 ${selectedIds.join(', ') || '없음'} · 예매 ${bookedIds.length}석 · ${hold}`,
-        `합계 ${formatPrice(memo.total)} · ${memo === previousMemo ? '재사용' : '계산'}`,
-        `#${renderNumber} · 노드 ${countVdomNodes(vnode)}개 · ${change}`,
-        timerEffectStatus(deadline, previousDeadline),
-      ];
-      previousVdom = vnode;
-      previousMemo = memo;
-      previousDeadline = deadline;
-      setInspection?.({ rows, vnode });
+      const patchCount = previous ? diff(previous.vnode, vnode).length : null;
+      if (previous && source && source !== TIMER_SOURCE) {
+        lastAction = describeBookingAction(previous, booking, memo, patchCount);
+      }
+      if (previous && deadline !== previous.booking.deadline) {
+        timerStatus = timerEffectStatus(deadline, previous.booking.deadline);
+      }
+
+      const previousSeconds = previous?.booking.seconds;
+      const previousTotal = previous?.memo.total;
+      const timer = {
+        before: source === TIMER_SOURCE && !expired && seconds !== previousSeconds ? formatTime(previousSeconds) : null,
+        value: expired ? '시간 만료' : deadline === null ? '대기' : formatTime(seconds),
+        status: timerStatus,
+      };
+      const price = {
+        before: previous && memo.total !== previousTotal ? formatPrice(previousTotal) : null,
+        value: formatPrice(memo.total),
+        status: memo === previous?.memo ? '재사용' : previous ? '다시 계산' : '초기 계산',
+      };
+      previous = { booking, memo, vnode };
+      setInspection?.({ action: lastAction, timer, price, vnode, patchCount });
     }
 
     const inspector = new FunctionComponent(ReactInspector);

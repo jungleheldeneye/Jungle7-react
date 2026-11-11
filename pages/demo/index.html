@@ -263,13 +263,34 @@
     }
     .presentation .vdom-trees {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       margin-top: 12px;
+      max-height: min(58vh, 480px);
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--code-bg);
     }
-    .presentation .vdom-trees[hidden] { display: none; }
-    .presentation .vdom-trees > div { min-width: 0; }
-    .presentation .vdom-trees h3 { margin: 0 0 6px; font-size: 14px; }
+    .vdom-trees > div + div { border-inline-start: 1px solid var(--line); }
+    .vdom-trees h3 {
+      position: sticky;
+      top: 0;
+      margin: 0;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      font-size: 14px;
+    }
+    .presentation .vdom-trees .log {
+      max-height: none;
+      overflow: visible;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 13px;
+    }
+    .vdom-trees .vdom-line { display: block; min-height: 1.5em; }
+    .vdom-trees .vdom-line:has(mark) { background: var(--blue-surface); }
+    .vdom-trees .vdom-change-label { font-weight: 700; }
     .presentation #history-select { font: inherit; margin-bottom: 8px; }
     .history-heading {
       display: flex;
@@ -349,32 +370,18 @@
         <summary>변경 목록 보기</summary>
         <pre id="patch-log" class="log"></pre>
       </details>
-      <details id="applied-vdom-details" class="disclosure">
-        <summary>적용 전후 VDOM 보기</summary>
-        <p id="applied-vdom-empty" class="summary">Patch를 적용하면 전후 VDOM을 볼 수 있어요.</p>
-        <div id="applied-vdom-trees" class="vdom-trees" hidden>
-          <div>
-            <h3>적용 전 VDOM</h3>
-            <pre id="applied-before" class="log"></pre>
-          </div>
-          <div>
-            <h3>적용 후 VDOM</h3>
-            <pre id="applied-after" class="log"></pre>
-          </div>
-        </div>
-      </details>
     </section>
 
     <details id="vdom-details" class="panel disclosure comparison">
-      <summary>현재 VDOM과 편집한 VDOM 비교</summary>
-      <div class="vdom-trees">
+      <summary id="vdom-comparison-label">VDOM 전후 비교</summary>
+      <div class="vdom-trees" role="region" aria-labelledby="vdom-comparison-label" tabindex="0">
         <div>
-          <h3>현재 VDOM</h3>
-          <pre id="current-vdom" class="log"></pre>
+          <h3 id="before-vdom-label">현재 VDOM</h3>
+          <pre id="before-vdom" class="log"></pre>
         </div>
         <div>
-          <h3>편집 후 VDOM</h3>
-          <pre id="draft-vdom" class="log"></pre>
+          <h3 id="after-vdom-label">편집 후 VDOM</h3>
+          <pre id="after-vdom" class="log"></pre>
         </div>
       </div>
     </details>
@@ -412,7 +419,7 @@
      * 각 영역(.area) 안에는 루트 요소가 정확히 하나 있다고 가정한다.
      */
     import { domToVdom, vdomToDom } from '../../src/vdom.js';
-    import { diff } from '../../src/diff.js';
+    import { diff, namesOf } from '../../src/diff.js';
     import { patch } from '../../src/patch.js';
 
     const $ = (id) => document.getElementById(id);
@@ -427,15 +434,12 @@
     const pendingChanges = $('pending-changes');
     const pendingLog = $('pending-log');
     const vdomDetails = $('vdom-details');
-    const currentVdom = $('current-vdom');
-    const draftVdom = $('draft-vdom');
+    const beforeVdomLabel = $('before-vdom-label');
+    const afterVdomLabel = $('after-vdom-label');
+    const beforeVdom = $('before-vdom');
+    const afterVdom = $('after-vdom');
     const summary = $('summary');
     const patchLog = $('patch-log');
-    const appliedDetails = $('applied-vdom-details');
-    const appliedEmpty = $('applied-vdom-empty');
-    const appliedTrees = $('applied-vdom-trees');
-    const appliedBefore = $('applied-before');
-    const appliedAfter = $('applied-after');
     const historyDetails = $('history-details');
     const historySelect = $('history-select');
     const historyVdom = $('history-vdom');
@@ -593,34 +597,48 @@
     function showVdomTrees() {
       if (!vdomDetails.open) return;
 
-      renderComparison(currentVdom, draftVdom, history[index], pending?.vnode, pending?.patches);
-    }
-
-    function showAppliedTrees() {
-      if (!appliedDetails.open) return;
-      appliedEmpty.hidden = lastApplied !== null;
-      appliedTrees.hidden = lastApplied === null;
-      if (lastApplied) {
-        const { before, after, patches } = lastApplied;
-        renderComparison(appliedBefore, appliedAfter, before, after, patches);
+      const applied = pending?.patches.length === 0 ? lastApplied : null;
+      beforeVdomLabel.textContent = applied ? '적용 전 VDOM' : '현재 VDOM';
+      afterVdomLabel.textContent = applied ? '적용 후 VDOM' : '편집 후 VDOM';
+      if (applied) {
+        renderComparison(applied.before, applied.after, applied.patches);
+      } else {
+        renderComparison(history[index], pending?.vnode, pending?.patches);
       }
     }
 
-    function renderComparison(beforeOutput, afterOutput, before, after, patches = []) {
+    function renderComparison(before, after, patches = []) {
       const beforeChanges = new Map();
+      const afterChanges = new Map();
+      const afterNodesByOldNode = new Map();
+      if (patches.length > 0) matchAfterNodes(before, after, afterNodesByOldNode);
       for (const change of patches) {
-        // src/diff.js의 경로는 적용 전 트리를 가리킨다.
-        addChange(beforeChanges, change.path, change);
+        const oldNode = change.path.reduce((node, index) => node.children[index], before);
+        if (change.type !== 'CREATE') addChange(beforeChanges, oldNode, change);
+        if (change.type !== 'REMOVE') {
+          // CREATE와 REPLACE의 vnode는 새 트리의 노드다. 나머지는 이전 경로로 대응 노드를 찾는다.
+          const newNode = change.vnode ?? afterNodesByOldNode.get(oldNode);
+          addChange(afterChanges, newNode, change);
+        }
       }
-      renderVdomTree(beforeOutput, before, beforeChanges);
-      renderVdomTree(afterOutput, after);
+      renderVdomTree(beforeVdom, before, beforeChanges);
+      renderVdomTree(afterVdom, after, afterChanges);
     }
 
-    function addChange(changes, path, change) {
-      const index = path.join('.');
-      const entries = changes.get(index) ?? [];
-      entries.push(change);
-      changes.set(index, entries);
+    function matchAfterNodes(before, after, matches) {
+      matches.set(before, after);
+      if (before.type !== after.type || before.children.length === 0) return;
+
+      const afterByName = new Map(namesOf(after.children).map((name, index) => [name, after.children[index]]));
+      namesOf(before.children).forEach((name, index) => {
+        const match = afterByName.get(name);
+        if (match) matchAfterNodes(before.children[index], match, matches);
+      });
+    }
+
+    function addChange(changes, node, change) {
+      if (!changes.has(node)) changes.set(node, []);
+      changes.get(node).push(change);
     }
 
     function showHistory() {
@@ -647,21 +665,24 @@
 
       const tree = document.createDocumentFragment();
 
-      function append(text, highlight = false) {
-        if (highlight) {
-          const mark = document.createElement('mark');
-          mark.textContent = text;
-          tree.append(mark);
-        } else {
-          tree.append(text);
-        }
-      }
-
-      function visit(node, path) {
-        const entries = changes.get(path.join('.')) ?? [];
+      function visit(node, depth) {
+        const entries = changes.get(node) ?? [];
         const propChange = entries.find(({ type }) => type === 'PROPS');
-        const indent = '  '.repeat(path.length);
-        append(indent);
+        const indent = '  '.repeat(depth);
+        const line = document.createElement('span');
+        line.className = 'vdom-line';
+        line.append(indent);
+
+        function append(text, highlight = false, className = '') {
+          if (highlight) {
+            const mark = document.createElement('mark');
+            mark.className = className;
+            mark.textContent = text;
+            line.append(mark);
+          } else {
+            line.append(text);
+          }
+        }
 
         const text = textValue(node);
         const isComment = node.type === '#comment';
@@ -670,7 +691,7 @@
         } else if (isComment) {
           append(`<!--${node.props.nodeValue}-->`, entries.length > 0);
         } else {
-          const tagChanged = entries.some(({ type }) => type !== 'PROPS' && type !== 'CREATE');
+          const tagChanged = entries.some(({ type }) => type !== 'PROPS');
           append(`<${node.type}`, tagChanged);
           for (const [name, value] of Object.entries(node.props)) {
             const changed = propChange && Object.hasOwn(propChange.props, name);
@@ -679,16 +700,20 @@
           append('>');
         }
 
-        if (entries.length) append(` [${entries.map(({ type }) => type).join(', ')}]`, true);
-        append('\n');
+        if (entries.length) {
+          line.append(' ');
+          append(`[${entries.map(({ type }) => type).join(', ')}]`, true, 'vdom-change-label');
+        }
+        line.append('\n');
+        tree.append(line);
 
         if (text === undefined && !isComment) {
-          node.children.forEach((child, index) => visit(child, [...path, index]));
-          append(`${indent}</${node.type}>\n`);
+          node.children.forEach((child) => visit(child, depth + 1));
+          tree.append(`${indent}</${node.type}>\n`);
         }
       }
 
-      visit(vnode, []);
+      visit(vnode, 0);
       output.replaceChildren(tree);
     }
 
@@ -711,7 +736,6 @@
       observer.disconnect();
       report(patches, records);
       lastApplied = { before: history[index], after: next, patches };
-      showAppliedTrees();
     }
 
     function report(patches, records) {
@@ -780,7 +804,6 @@
     testArea.addEventListener('input', onTestInput);
     testSource.addEventListener('input', syncTestFromSource);
     vdomDetails.addEventListener('toggle', showVdomTrees);
-    appliedDetails.addEventListener('toggle', showAppliedTrees);
     historyDetails.addEventListener('toggle', showHistory);
     historySelect.addEventListener('change', showHistoryVdom);
 

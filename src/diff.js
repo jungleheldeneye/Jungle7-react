@@ -112,7 +112,7 @@ function isChangedProp(name, oldProps, newProps) {
  * 전체 자리 번호를 쓰면 input이 'i:1' → 'i:2'로 바뀌어 지웠다 다시 만들어지고 입력값이 사라진다 (R3)
  * key가 하나도 없으면 전체 자리 번호와 같다
  */
-function namesOf(children) {
+export function namesOf(children) {
   // key 없는 자식의 자리 번호 → key 없는 형제 중 몇 번째.  [k, -, k, -] → {1 → 0, 3 → 1}
   const unkeyedOrder = new Map(
     children
