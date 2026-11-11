@@ -168,7 +168,10 @@ export class FunctionComponent {
  *
  * - type이 함수면: "지금 = 자식"으로 표시한 뒤 type(props) 실행 → 결과도 다시 expand
  *   자식 안에서 useState를 부르면 표시를 보고 에러가 난다 (R5)
- * - h(TodoItem, { key })의 key는 펼친 결과 루트로 옮긴다. 안 옮기면 diff가 key로 짝을 못 짓는다 (R8)
+ * - key는 두 곳 중 어디에 적어도 된다 (R8)
+ *     h(TodoItem, { key: t.id })            부모 쪽: 펼친 결과 루트로 옮긴다. 안 옮기면 diff가 key로 짝을 못 짓는다
+ *     TodoItem 안에서 h('li', { key: ... })  자식 쪽: 펼친 결과 루트에 이미 있다
+ *   둘 다 있으면 자식 쪽(펼친 루트에 있던 key)을 쓴다
  * - type이 문자열이면: children만 펼친다
  * - 컴포넌트가 null·숫자처럼 vnode가 아닌 값을 돌려주면 h의 자식과 같은 규칙으로 바꾼다 (toChildVnode)
  */
@@ -185,8 +188,8 @@ function expand(vnode) {
       currentRender.owner = saved;
     }
     const expanded = expand(result);
-    if (vnode.key !== undefined) {
-      return { ...expanded, key: vnode.key };
+    if (expanded.key === undefined && vnode.key !== undefined) {
+      return { ...expanded, key: vnode.key };   // 자식 쪽에 key가 없을 때만 부모 쪽 key를 쓴다
     }
     return expanded;
   }
