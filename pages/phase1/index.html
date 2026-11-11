@@ -5,58 +5,280 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Phase 1 · VDOM Diff 검증</title>
   <link rel="stylesheet" href="./style.css">
+  <style>
+    .presentation {
+      --surface: #f2f5fa;
+      --blue-surface: #eef4ff;
+      --blue-text: #224eb0;
+      --blue-button: #2356cf;
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: clamp(16px, 4vw, 52px);
+      font-size: 16px;
+      word-break: keep-all;
+      overflow-wrap: anywhere;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .presentation {
+        --surface: #252a34;
+        --blue-surface: #202d49;
+        --blue-text: #b7ccff;
+        --blue-button: #3464d9;
+      }
+    }
+
+    .page-header { margin-bottom: 28px; }
+    .phase-label {
+      margin: 0 0 8px;
+      color: var(--blue-text);
+      font-size: 14px;
+      font-weight: 750;
+    }
+    .page-header h1 {
+      margin: 0;
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1.14;
+      letter-spacing: -.035em;
+    }
+    .page-header .intro { margin: 12px 0 0; color: var(--muted); font-size: 16px; }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .presentation .panel { padding: 20px; border-radius: 14px; }
+    .presentation h2 { margin: 0; font-size: 20px; line-height: 1.3; }
+    .step h2 { display: flex; align-items: center; gap: 9px; }
+    .step-number {
+      display: grid;
+      place-items: center;
+      flex: 0 0 29px;
+      height: 29px;
+      border-radius: 8px;
+      background: var(--blue-surface);
+      color: var(--blue-text);
+      font-size: 14px;
+    }
+    .step-description {
+      margin: 10px 0 16px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .presentation .area {
+      min-height: 232px;
+      padding: 16px;
+      background: var(--surface);
+    }
+    .presentation #test-area { border-color: var(--blue-text); }
+    .presentation #real-area { border: 1px solid var(--line); }
+    .presentation .card .title { font-size: 19px; }
+    .presentation .card .todos { line-height: 1.7; }
+    .presentation .card .count { font-size: 14px; }
+    .presentation .card input {
+      display: block;
+      margin-top: 5px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+    }
+
+    .diff-step { display: flex; flex-direction: column; }
+    .diff-result {
+      flex: 1;
+      min-height: 176px;
+      margin-bottom: 12px;
+      padding: 14px;
+      border-radius: 8px;
+      background: var(--blue-surface);
+    }
+    .diff-result .summary { margin: 0; }
+    .diff-changes {
+      display: grid;
+      gap: 8px;
+      max-height: 180px;
+      overflow: auto;
+      margin: 10px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+    .diff-changes:empty,
+    .diff-changes:empty + details { display: none; }
+    .diff-change {
+      padding: 9px 10px;
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    .diff-change h3 {
+      margin: 0 0 4px;
+      color: var(--muted);
+      font: 600 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .diff-change p { margin: 0; font-size: 15px; }
+    .diff-change p + p { margin-top: 4px; }
+    .presentation mark {
+      padding: 1px 3px;
+      border-radius: 3px;
+      background: #ffe69a;
+      color: #382500;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+    }
+    .diff-result .log {
+      max-height: 152px;
+      margin-top: 10px;
+      background: var(--panel);
+    }
+    .presentation .log:empty { display: none; }
+    .presentation .primary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 44px;
+      background: var(--blue-button);
+      border-color: var(--blue-button);
+      color: #fff;
+      font-weight: 700;
+    }
+    .presentation .primary:disabled {
+      opacity: 1;
+      background: var(--surface);
+      border-color: var(--line);
+      color: var(--muted);
+    }
+
+    .presentation .log-panel,
+    .comparison { margin: 16px 0 0; max-width: none; }
+    .log-panel > .summary { margin: 8px 0 0; }
+    .disclosure { min-width: 0; }
+    .disclosure:not(.comparison) { margin-top: 10px; }
+    .disclosure > summary {
+      padding: 4px 0;
+      color: var(--blue-text);
+      font-size: 15px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    .comparison > summary { padding: 0; font-size: 16px; }
+    .disclosure > .log,
+    .disclosure > .summary { margin-top: 8px; }
+    .presentation .log { font-size: 14px; }
+    .presentation textarea { display: block; font-size: 16px; }
+    .presentation :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .presentation .vdom-trees {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .presentation .vdom-trees[hidden] { display: none; }
+    .presentation .vdom-trees > div { min-width: 0; }
+    .presentation .vdom-trees h3 { margin: 0 0 6px; font-size: 14px; }
+    .presentation #history-select { font: inherit; margin-bottom: 8px; }
+    .history-heading {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px 16px;
+    }
+    .history-heading .controls { flex-wrap: wrap; }
+
+    @media (max-width: 950px) {
+      .workflow { grid-template-columns: minmax(0, 1fr); }
+      .diff-result { min-height: 0; }
+    }
+  </style>
 </head>
-<body>
-  <header class="topbar">
-    <h1>Phase 1 · Virtual DOM / Diff / Patch</h1>
-    <div class="controls">
-      <button id="btn-back" type="button">◀ 뒤로</button>
-      <span id="history-pos" class="pos">1 / 1</span>
-      <button id="btn-forward" type="button">앞으로 ▶</button>
-      <button id="btn-patch" type="button" class="primary" disabled>Patch</button>
-    </div>
+<body class="presentation">
+  <header class="page-header">
+    <p class="phase-label">Phase 1</p>
+    <h1>Virtual DOM, Diff &amp; Patch</h1>
+    <p class="intro">테스트 영역을 수정하고, 어떤 변경이 실제 DOM에 반영되는지 확인해 보세요.</p>
   </header>
 
-  <main class="grid">
-    <!-- 테스트 영역: 로드 시 VDOM으로 렌더링된다. 사용자가 자유롭게 수정 -->
-    <section class="panel">
-      <h2>테스트 영역 <small>직접 수정하거나 아래 HTML을 고치세요</small></h2>
-      <div id="test-area" class="area" contenteditable="true" spellcheck="false"></div>
-      <label class="source-label" for="test-source">테스트 영역 HTML</label>
-      <textarea id="test-source" spellcheck="false" aria-describedby="pending-summary"></textarea>
-    </section>
+  <main>
+    <div class="workflow">
+      <section class="panel step">
+        <h2><span class="step-number">1</span> 테스트 영역 편집</h2>
+        <p class="step-description" id="edit-help">할 일 목록의 텍스트를 직접 바꿔 보세요.</p>
+        <div id="test-area" class="area" contenteditable="true" spellcheck="false"
+             aria-label="테스트 영역" aria-describedby="edit-help"></div>
+        <details class="disclosure">
+          <summary>HTML 편집</summary>
+          <label class="source-label" for="test-source">테스트 영역 HTML</label>
+          <textarea id="test-source" spellcheck="false" aria-describedby="pending-summary"></textarea>
+        </details>
+      </section>
 
-    <!-- 실제 영역: 페이지 로드 시 이 HTML이 처음 VDOM이 된다. Patch는 이 영역에만 반영된다 -->
-    <section class="panel">
-      <h2>실제 영역 <small>Patch를 누르면 변경사항이 반영돼요</small></h2>
-      <div id="real-area" class="area">
-        <div class="card">
-          <h3 class="title">오늘 할 일</h3>
-          <ul class="todos">
-            <li class="done">빨래</li>
-            <li>설거지</li>
-            <li>공부</li>
-          </ul>
-          <p class="count">3개 중 1개 완료</p>
-          <label>
-            입력값 보존 확인
-            <input type="text" placeholder="안녕">
-          </label>
+      <section class="panel step diff-step">
+        <h2><span class="step-number">2</span> Diff 확인</h2>
+        <p class="step-description">두 VDOM 사이의 차이를 확인해요.</p>
+        <div class="diff-result">
+          <p id="pending-summary" class="summary" role="status">테스트 영역을 편집하면 차이가 여기에 표시돼요.</p>
+          <ul id="pending-changes" class="diff-changes" aria-label="바뀐 값"></ul>
+          <details class="disclosure">
+            <summary>변경 목록 JSON 보기</summary>
+            <pre id="pending-log" class="log"></pre>
+          </details>
         </div>
-      </div>
+        <button id="btn-patch" type="button" class="primary" disabled>Patch 적용 <span aria-hidden="true">→</span></button>
+      </section>
+
+      <section class="panel step">
+        <h2><span class="step-number">3</span> 실제 DOM 확인</h2>
+        <p class="step-description">Patch를 적용한 결과가 여기에 표시돼요.</p>
+        <div id="real-area" class="area">
+          <div class="card">
+            <h3 class="title">오늘 할 일</h3>
+            <ul class="todos">
+              <li class="done">빨래</li>
+              <li>설거지</li>
+              <li>공부</li>
+            </ul>
+            <p class="count">3개 중 1개 완료</p>
+            <label>
+              입력값 보존 확인
+              <input type="text" placeholder="안녕">
+            </label>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel log-panel">
+      <h2>마지막 Patch 결과</h2>
+      <p id="summary" class="summary" role="status">아직 Patch하지 않았어요.</p>
+      <details class="disclosure">
+        <summary>변경 목록 보기</summary>
+        <pre id="patch-log" class="log"></pre>
+      </details>
+      <details id="applied-vdom-details" class="disclosure">
+        <summary>적용 전후 VDOM 보기</summary>
+        <p id="applied-vdom-empty" class="summary">Patch를 적용하면 전후 VDOM을 볼 수 있어요.</p>
+        <div id="applied-vdom-trees" class="vdom-trees" hidden>
+          <div>
+            <h3>적용 전 VDOM</h3>
+            <pre id="applied-before" class="log"></pre>
+          </div>
+          <div>
+            <h3>적용 후 VDOM</h3>
+            <pre id="applied-after" class="log"></pre>
+          </div>
+        </div>
+      </details>
     </section>
 
-  </main>
-
-  <section class="panel log-panel">
-    <h2>적용 예정 변경</h2>
-    <p id="pending-summary" class="summary" role="status">테스트 영역을 편집하면 차이가 여기에 표시돼요.</p>
-    <pre id="pending-log" class="log"></pre>
-    <details id="vdom-details" class="vdom-details">
-      <summary>전체 VDOM 보기</summary>
+    <details id="vdom-details" class="panel disclosure comparison">
+      <summary>현재 VDOM과 편집한 VDOM 비교</summary>
       <div class="vdom-trees">
         <div>
-          <h3>적용 전 VDOM</h3>
+          <h3>현재 VDOM</h3>
           <pre id="current-vdom" class="log"></pre>
         </div>
         <div>
@@ -65,37 +287,24 @@
         </div>
       </div>
     </details>
-  </section>
 
-  <section class="panel log-panel">
-    <h2>마지막 Patch 결과</h2>
-    <p id="summary" class="summary">아직 Patch하지 않았어요.</p>
-    <pre id="patch-log" class="log"></pre>
-    <details id="applied-vdom-details" class="vdom-details">
-      <summary>전체 VDOM 보기</summary>
-      <p id="applied-vdom-empty" class="summary">Patch를 적용하면 전후 VDOM을 볼 수 있어요.</p>
-      <div id="applied-vdom-trees" class="vdom-trees" hidden>
-        <div>
-          <h3>적용 전 VDOM</h3>
-          <pre id="applied-before" class="log"></pre>
-        </div>
-        <div>
-          <h3>적용 후 VDOM</h3>
-          <pre id="applied-after" class="log"></pre>
+    <section class="panel log-panel">
+      <div class="history-heading">
+        <h2>State History</h2>
+        <div class="controls" role="group" aria-label="저장 시점 이동">
+          <button id="btn-back" type="button" disabled>← 뒤로</button>
+          <span id="history-pos" class="pos" role="status">1 / 1</span>
+          <button id="btn-forward" type="button" disabled>앞으로 →</button>
         </div>
       </div>
-    </details>
-  </section>
-
-  <section class="panel log-panel">
-    <h2>State History</h2>
-    <details id="history-details" class="vdom-details">
-      <summary>저장된 VDOM 보기</summary>
-      <label class="source-label" for="history-select">저장 시점</label>
-      <select id="history-select"></select>
-      <pre id="history-vdom" class="log"></pre>
-    </details>
-  </section>
+      <details id="history-details" class="disclosure">
+        <summary>저장된 VDOM 보기</summary>
+        <label class="source-label" for="history-select">저장 시점</label>
+        <select id="history-select"></select>
+        <pre id="history-vdom" class="log"></pre>
+      </details>
+    </section>
+  </main>
 
   <script type="module" src="./main.js"></script>
 </body>

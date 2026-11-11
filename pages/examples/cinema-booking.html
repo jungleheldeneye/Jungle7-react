@@ -141,6 +141,7 @@
 
   <script type="module">
     import { FunctionComponent } from '../../src/component.js';
+    import { diff } from '../../src/diff.js';
     import { h } from '../../src/vdom.js';
     import { useEffect, useMemo, useState } from '../../src/hooks.js';
 
@@ -201,9 +202,9 @@
               class: tier === PREMIUM ? 'seat seat--premium' : 'seat',
               'data-seat': id,
               'aria-label': label,
-              'aria-pressed': booked ? null : String(selected),
-              disabled: booked,
-              onClick: onSelect,
+              'aria-pressed': booked ? undefined : String(selected),
+              disabled: booked ? '' : undefined,
+              onclick: onSelect,
             }, id);
           })),
         )),
@@ -221,7 +222,7 @@
       return h('section', { class: 'panel', 'aria-labelledby': 'summary-heading' },
         h('div', { class: 'panel-heading' },
           h('h2', { id: 'summary-heading' }, receipt ? '예매 완료' : '예매 요약'),
-          h('p', { class: 'hold small', role: receipt ? null : 'timer' },
+          h('p', { class: 'hold small', role: receipt ? undefined : 'timer' },
             receipt ? '2관 · 19:30' : seconds > 0 ? `남은 시간 ${formatTime(seconds)}` : '선택 시 2분간 유지',
           ),
         ),
@@ -244,11 +245,11 @@
         ),
         h('div', { class: 'actions' },
           h('button', {
-            type: 'button', class: 'action action--primary', onClick: onConfirm,
-            disabled: seats.length === 0,
+            type: 'button', class: 'action action--primary', onclick: onConfirm,
+            disabled: seats.length === 0 ? '' : undefined,
           }, receipt ? '다른 좌석 고르기' : '예매 확정'),
           seats.length > 0 && !receipt
-            ? h('button', { type: 'button', class: 'action', onClick: onClear }, '선택 비우기')
+            ? h('button', { type: 'button', class: 'action', onclick: onClear }, '선택 비우기')
             : null,
         ),
       );
@@ -262,7 +263,7 @@
       const { selectedIds, bookedIds, deadline, seconds, receipt, expired } = booking;
       const summary = useMemo(() => summarize(selectedIds), [selectedIds]);
 
-      // 같은 이벤트 함수를 넘겨 타이머가 바뀔 때 좌석 리스너를 다시 연결하지 않는다.
+      // 첫 렌더의 setter도 함수형 업데이트로 항상 현재 상태를 읽는다.
       const actions = useMemo(() => ({
         onSelect(event) {
           const id = event.currentTarget.dataset.seat;
@@ -296,7 +297,7 @@
             };
           });
         },
-      }), [setBooking]);
+      }), []);
 
       useEffect(() => {
         if (deadline === null) return;
@@ -310,6 +311,10 @@
         }, 200);
         return () => clearInterval(timer);
       }, [deadline]);
+
+      useEffect(() => {
+        publishInspection(booking, summary);
+      }, [booking, summary]);
 
       return h('div', {},
         h('header', { class: 'booking-heading' },
@@ -325,9 +330,16 @@
 
     const INSPECTOR_LABELS = ['setState', 'useState', 'useMemo', 'VDOM', 'useEffect'];
 
-    function ReactInspector(_props, { state: { rows, vnode } }) {
+    let setInspection;
+
+    function ReactInspector() {
+      const [{ rows, vnode }, setSnapshot] = useState({ rows: [], vnode: null });
       const [expanded, setExpanded] = useState(false);
-      const onToggle = useMemo(() => (event) => setExpanded(event.currentTarget.open), [setExpanded]);
+      const onToggle = useMemo(() => (event) => setExpanded(event.currentTarget.open), []);
+      useEffect(() => {
+        setInspection = setSnapshot;
+        return () => { setInspection = undefined; };
+      }, []);
 
       return h('aside', { class: 'inspector', 'aria-label': '미니 React 실시간 상태' },
         h('dl', {}, rows.map((value, index) =>
@@ -336,7 +348,7 @@
             h('dd', {}, value),
           ),
         )),
-        h('details', { class: 'inspector-vdom', onToggle },
+        h('details', { class: 'inspector-vdom', ontoggle: onToggle },
           h('summary', {}, '현재 VDOM 보기'),
           expanded && vnode ? h('pre', { tabindex: '0', 'aria-label': '현재 예매 화면의 VDOM' },
             JSON.stringify(vnode, (_, value) => typeof value === 'function' ? '[함수]' : value, 2),
@@ -350,39 +362,41 @@
       return 1 + node.children.reduce((count, child) => count + countVdomNodes(child), 0);
     }
 
-    function timerEffectStatus(effect, previousEffect) {
-      if (!previousEffect) return '첫 실행 · 타이머 대기';
-      if (effect === previousEffect) return effect.cleanup ? '타이머 유지' : '타이머 대기';
-      if (effect.cleanup) return previousEffect.cleanup ? '타이머 재시작' : '타이머 시작';
-      return '타이머 정리';
+    function timerEffectStatus(deadline, previousDeadline) {
+      if (previousDeadline === undefined) return '첫 실행 · 타이머 대기';
+      if (deadline === previousDeadline) return deadline === null ? '타이머 대기' : '타이머 유지';
+      if (deadline === null) return '타이머 정리';
+      return previousDeadline === null ? '타이머 시작' : '타이머 재시작';
     }
 
     const bookingApp = new FunctionComponent(BookingApp);
-    const inspector = new FunctionComponent(ReactInspector, {}, { rows: [], vnode: null });
-    inspector.mount(document.getElementById('react-inspector'));
-
+    let previousVdom;
     let previousMemo;
-    let previousEffect;
+    let previousDeadline;
     let renderNumber = 0;
-    bookingApp.mount(document.getElementById('booking'), ({ previousVdom, vnode, patches }) => {
-      const [stateSlot, memo] = bookingApp.hooks;
-      const effect = bookingApp.hooks.find((hook) => hook.type === 'effect');
-      const { selectedIds, bookedIds, deadline, seconds, expired, source } = stateSlot.value;
+
+    function publishInspection(booking, memo) {
+      const { selectedIds, bookedIds, deadline, seconds, expired, source } = booking;
+      const { vnode } = bookingApp;
       const hold = deadline === null ? (expired ? '시간 만료' : '대기') : formatTime(seconds);
-      const change = previousVdom === undefined ? '초기 생성' : `Diff ${patches.length}건`;
+      const change = previousVdom === undefined ? '초기 생성' : `Diff ${diff(previousVdom, vnode).length}건`;
       renderNumber++;
-      const values = [
+      const rows = [
         source ? `${expired && source === '타이머 갱신' ? '시간 만료' : source} · 반영 #${renderNumber}` : '초기 상태 · 호출 없음',
         `선택 ${selectedIds.join(', ') || '없음'} · 예매 ${bookedIds.length}석 · ${hold}`,
-        `합계 ${formatPrice(memo.value.total)} · ${memo === previousMemo ? '재사용' : '계산'}`,
+        `합계 ${formatPrice(memo.total)} · ${memo === previousMemo ? '재사용' : '계산'}`,
         `#${renderNumber} · 노드 ${countVdomNodes(vnode)}개 · ${change}`,
-        timerEffectStatus(effect, previousEffect),
+        timerEffectStatus(deadline, previousDeadline),
       ];
+      previousVdom = vnode;
       previousMemo = memo;
-      previousEffect = effect;
+      previousDeadline = deadline;
+      setInspection?.({ rows, vnode });
+    }
 
-      inspector.setState({ rows: values, vnode });
-    });
+    const inspector = new FunctionComponent(ReactInspector);
+    inspector.mount(document.getElementById('react-inspector'));
+    bookingApp.mount(document.getElementById('booking'));
   </script>
 </body>
 </html>
