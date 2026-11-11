@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>미니 React 테스트</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; color: #222; background: #fff; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    h2 { font-size: 16px; margin: 32px 0 8px; }
+    .bar { display: flex; gap: 12px; align-items: center; margin: 8px 0 12px; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+    th { background: #f3f3f3; position: sticky; top: 0; }
+    td:nth-child(1) { white-space: nowrap; font-weight: 600; }
+    td:nth-child(3), td:nth-child(4) { max-width: 260px; }
+    .observed { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+    .status { white-space: nowrap; font-weight: 600; }
+    .s-통과 { background: #e3f6e3; color: #1b6b1b; }
+    .s-실패 { background: #fde4e4; color: #a01818; }
+    .s-보류 { background: #fff4d6; color: #7a5a00; }
+    .s-미구현 { background: #ececec; color: #555; }
+    .s-수동 { background: #e3eefc; color: #1a4a8a; }
+    .manual { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+    .card { border: 1px solid #ccc; border-radius: 6px; padding: 12px; }
+    .card h3 { font-size: 14px; margin: 0 0 8px; }
+    .card ol { margin: 0 0 8px; padding-left: 20px; font-size: 13px; }
+    .app { border: 1px dashed #999; padding: 8px; margin-top: 8px; }
+    textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+    #sandbox { position: absolute; left: -9999px; top: 0; }
+  </style>
+</head>
+<body>
+  <h1>미니 React 테스트</h1>
+  <p>기대값은 사람이 정한 표 그대로입니다. 테스트는 <code>../src/*.js</code>를 바로 불러서 돌립니다.</p>
+
+  <div class="bar">
+    <button id="rerun">다시 실행</button>
+    <strong id="summary">실행 중…</strong>
+  </div>
+
+  <table id="results">
+    <thead>
+      <tr><th>ID</th><th>R-ID</th><th>시나리오</th><th>기대값</th><th>상태</th><th>관찰값</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>손으로 해보기 (상태: 수동)</h2>
+  <div class="manual">
+    <div class="card">
+      <h3>T02 손으로 연타</h3>
+      <ol>
+        <li>"렌더 횟수 0으로"를 누른다</li>
+        <li>+1을 아주 빠르게 20번 누른다</li>
+        <li>count와 렌더 횟수를 적는다 (기대값: 20번 렌더 돼야한다.)</li>
+      </ol>
+      <div>렌더 횟수(처음 그리기 제외): <strong id="t02-renders">0</strong> <button id="t02-reset">렌더 횟수 0으로</button></div>
+      <div class="app" id="t02-app"></div>
+    </div>
+
+    <div class="card">
+      <h3>T07 손으로 해보기</h3>
+      <ol>
+        <li>입력창에 글자를 몇 개 친다 (커서를 둔 채로)</li>
+        <li>목록에서 "설거지"의 삭제를 누른다</li>
+        <li>입력창 글자가 그대로인지, "설거지"만 사라졌는지 본다 (기대값: 입력창은 그대로 있고 해당 항목만 삭제 되야한다.)</li>
+      </ol>
+      <div class="app" id="t07-app"></div>
+    </div>
+
+    <div class="card">
+      <h3>T23 손으로 해보기 (만들 때 랜덤 id → key)</h3>
+      <ol>
+        <li>"빨래" 앞 체크박스를 체크한다</li>
+        <li>"맨 앞에 추가"를 누른다</li>
+        <li>체크가 "빨래" 옆에 남는지, 새 항목 옆으로 옮겨 가는지 적는다</li>
+        <li>기대값: key 없는 건 없음 -&gt; 처음에 vdom을 만들 때 html을 수정해서 key를 랜덤하게 부여함</li>
+      </ol>
+      <div class="app" id="t23-app"></div>
+    </div>
+
+    <div class="card">
+      <h3>T24 손으로 해보기 (Phase 1 페이지)</h3>
+      <ol>
+        <li><a href="../pages/phase1/index.html" target="_blank">Phase 1 페이지</a>를 연다</li>
+        <li>아래 HTML(&lt;li&gt; 1000개)을 복사해 Phase 1의 HTML 칸에 통째로 붙여 넣는다</li>
+        <li>개발자 도구 콘솔에 아래 코드를 붙여 넣고 실행한다</li>
+        <li>"li 1000개, 서로 다른 key 1000개, key 없는 li 0개"인지 적는다 (기대값: key는 겹치지않는다.)</li>
+      </ol>
+      <div class="bar"><button data-copy="t24-html">HTML 복사</button><button data-copy="t24-console">콘솔 코드 복사</button></div>
+      <textarea id="t24-html" rows="4" readonly></textarea>
+      <textarea id="t24-console" rows="3" readonly></textarea>
+    </div>
+  </div>
+
+  <h2>전체 결과 (탭 구분, 스프레드시트에 붙여 넣기)</h2>
+  <div class="bar"><button id="copy">복사</button></div>
+  <textarea id="tsv" rows="14" readonly></textarea>
+
+  <div id="sandbox" aria-hidden="true"></div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
